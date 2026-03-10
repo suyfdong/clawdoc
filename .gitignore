@@ -2,6 +2,7 @@
 node_modules/
 
 # Next.js
+.next/
 web/.next/
 web/out/
 

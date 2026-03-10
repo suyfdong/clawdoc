@@ -1,552 +1,610 @@
 "use client";
 
-import { useAppStore } from "@/lib/store";
-import { useEffect, useState } from "react";
+import Link from "next/link";
 import {
-  Plug,
+  ArrowRight,
+  LayoutDashboard,
+  GitFork,
+  Wand2,
+  Stethoscope,
+  BookTemplate,
+  DollarSign,
   Terminal,
-  Copy,
-  Check,
-  Loader2,
-  AlertCircle,
-  Wifi,
-  WifiOff,
   Shield,
-  Cpu,
-  HardDrive,
   Zap,
+  Brain,
+  AlertTriangle,
+  CheckCircle2,
+  Github,
+  ExternalLink,
+  HelpCircle,
+  ChevronDown,
 } from "lucide-react";
 
-function CopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
+// ─── Pain Points ─────────────────────────────────────────────────
+
+const PAIN_POINTS = [
+  {
+    quote: "My OpenClaw experience has been endless debugging, frustration, and struggle.",
+    source: "Reddit user",
+  },
+  {
+    quote: "Memory is the most confusing aspect of OpenClaw because there are multiple layers, each behaving differently.",
+    source: "Discord community",
+  },
+  {
+    quote: "I spent $3,600 last month because I didn't realize my heartbeat was using Opus.",
+    source: "GitHub Issues",
+  },
+];
+
+// ─── Features ────────────────────────────────────────────────────
+
+const FEATURES = [
+  {
+    icon: LayoutDashboard,
+    title: "Visual Config Canvas",
+    desc: "Drag models onto your agent config. Connect with lines. No JSON editing.",
+    accent: "var(--accent-amber)",
+    href: "/canvas",
+  },
+  {
+    icon: GitFork,
+    title: "Architecture Explainer",
+    desc: "Interactive diagram of how OpenClaw actually works — memory layers, bootstrap flow, token costs.",
+    accent: "var(--accent-blue)",
+    href: "/architecture",
+  },
+  {
+    icon: Wand2,
+    title: "Model Selection Wizard",
+    desc: "Answer 5 questions, get a personalized model recommendation with cost estimate.",
+    accent: "var(--accent-purple)",
+    href: "/wizard",
+  },
+  {
+    icon: Stethoscope,
+    title: "Config Diagnosis",
+    desc: "Auto-scan your config for expensive mistakes, missing fallbacks, and security issues.",
+    accent: "var(--accent-red)",
+    href: "/diagnose",
+  },
+  {
+    icon: BookTemplate,
+    title: "Best Practice Templates",
+    desc: "16 pre-built configs for common use cases. Budget starter to multi-agent team.",
+    accent: "var(--accent-green)",
+    href: "/templates",
+  },
+  {
+    icon: DollarSign,
+    title: "Cost Optimizer",
+    desc: "See exactly how much you spend. What-if simulator for switching models.",
+    accent: "var(--accent-amber)",
+    href: "/optimizer",
+  },
+];
+
+// ─── How It Works ────────────────────────────────────────────────
+
+const STEPS = [
+  {
+    num: "1",
+    title: "Install the Companion Agent",
+    desc: "One command on your OpenClaw server. Takes 30 seconds.",
+    code: "curl -fsSL https://clawdoc.cc/install.sh | sh",
+  },
+  {
+    num: "2",
+    title: "Connect from your browser",
+    desc: "Paste the auth token into ClawDoc. Your data never leaves your network.",
+  },
+  {
+    num: "3",
+    title: "Drag, drop, done",
+    desc: "Visually configure models, diagnose issues, optimize costs — all in one place.",
+  },
+];
+
+// ─── Page ────────────────────────────────────────────────────────
+
+const faqJsonLd = {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  mainEntity: [
+    {
+      "@type": "Question",
+      name: "How do I configure OpenClaw models?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: "With ClawDoc, you drag models from the sidebar onto your agent config canvas. Choose a primary model, fallback, and heartbeat model visually — then click Apply. No JSON editing needed.",
+      },
+    },
+    {
+      "@type": "Question",
+      name: "Why is my OpenClaw so expensive?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: "Common causes: using an expensive model for heartbeat checks, oversized bootstrap files that add tokens to every message, or missing prompt caching. ClawDoc's Cost Optimizer can identify exactly where your money goes.",
+      },
+    },
+    {
+      "@type": "Question",
+      name: "How do OpenClaw memory layers work?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: "OpenClaw has multiple memory layers: SOUL.md (persistent personality), USER.md (user preferences), MEMORY.md (accumulated knowledge), and session context. Each gets injected into every message, consuming tokens.",
+      },
+    },
+    {
+      "@type": "Question",
+      name: "What is the best model for OpenClaw in 2026?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: "Claude Sonnet 4.6 offers the best quality-to-cost ratio for most users. Haiku 3.5 is great for budget setups. Use ClawDoc's Model Wizard for a personalized recommendation.",
+      },
+    },
+    {
+      "@type": "Question",
+      name: "How to fix OpenClaw slow response?",
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: "Slow responses usually come from oversized context, wrong model selection, missing fallback configuration, or network issues. ClawDoc's Diagnosis tool checks all of these automatically.",
+      },
+    },
+  ],
+};
+
+export default function LandingPage() {
   return (
-    <button
-      onClick={() => {
-        navigator.clipboard.writeText(text);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      }}
-      className="p-1.5 rounded-md transition-colors"
-      style={{
-        color: copied ? "var(--accent-green)" : "var(--text-tertiary)",
-        background: copied ? "var(--accent-green-dim)" : "transparent",
-      }}
-      onMouseEnter={(e) => {
-        if (!copied) e.currentTarget.style.background = "var(--bg-elevated)";
-      }}
-      onMouseLeave={(e) => {
-        if (!copied) e.currentTarget.style.background = "transparent";
-      }}
-    >
-      {copied ? <Check size={14} /> : <Copy size={14} />}
-    </button>
-  );
-}
-
-function StatCard({
-  icon: Icon,
-  label,
-  value,
-  accent,
-}: {
-  icon: React.ComponentType<{ size: number }>;
-  label: string;
-  value: string;
-  accent: string;
-}) {
-  return (
-    <div
-      className="p-4 rounded-xl"
-      style={{
-        background: "var(--bg-card)",
-        border: "1px solid var(--border-subtle)",
-      }}
-    >
-      <div className="flex items-center gap-3">
-        <div
-          className="w-10 h-10 rounded-lg flex items-center justify-center"
-          style={{ background: `${accent}15`, color: accent }}
-        >
-          <Icon size={20} />
-        </div>
-        <div>
-          <p className="text-xs" style={{ color: "var(--text-tertiary)" }}>
-            {label}
-          </p>
-          <p
-            className="text-lg font-semibold"
-            style={{ fontFamily: "var(--font-display)", color: "var(--text-primary)" }}
-          >
-            {value}
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-export default function ConnectPage() {
-  const {
-    serverUrl,
-    authToken,
-    connectionStatus,
-    connectionError,
-    serverInfo,
-    setServerUrl,
-    setAuthToken,
-    connect,
-    disconnect,
-  } = useAppStore();
-
-  const [urlInput, setUrlInput] = useState(serverUrl);
-  const [tokenInput, setTokenInput] = useState(authToken);
-
-  // Restore saved connection on mount
-  useEffect(() => {
-    if (typeof localStorage !== "undefined") {
-      const saved = localStorage.getItem("clawdoc_connection");
-      if (saved) {
-        try {
-          const { serverUrl: url, authToken: token } = JSON.parse(saved);
-          setUrlInput(url);
-          setTokenInput(token);
-          setServerUrl(url);
-          setAuthToken(token);
-        } catch {
-          // ignore
-        }
-      }
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Auto-connect if we have saved credentials
-  useEffect(() => {
-    if (serverUrl && authToken && connectionStatus === "disconnected") {
-      connect();
-    }
-  }, [serverUrl, authToken]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const handleConnect = () => {
-    setServerUrl(urlInput);
-    setAuthToken(tokenInput);
-    setTimeout(() => {
-      useAppStore.getState().connect();
-    }, 0);
-  };
-
-  const isConnected = connectionStatus === "connected";
-  const isConnecting = connectionStatus === "connecting";
-
-  const installCommand = "curl -fsSL https://clawdoc.dev/install.sh | sh";
-
-  // ---- Connected: Dashboard ----
-  if (isConnected && serverInfo) {
-    const totalTokens = Object.values(serverInfo.bootstrapFiles).reduce(
-      (sum, f) => sum + (f.estimatedTokens || 0),
-      0
-    );
-
-    return (
-      <div className="p-8 max-w-5xl">
-        <div className="flex items-center justify-between mb-8 animate-fade-in-up">
-          <div>
-            <h1
-              className="text-2xl font-bold"
-              style={{ fontFamily: "var(--font-display)" }}
-            >
-              Mission Control
-            </h1>
-            <p className="text-sm mt-1" style={{ color: "var(--text-secondary)" }}>
-              Connected to your OpenClaw instance
-            </p>
-          </div>
-          <button
-            onClick={disconnect}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm transition-colors"
-            style={{
-              background: "var(--accent-red-dim)",
-              color: "var(--accent-red)",
-            }}
-          >
-            <WifiOff size={14} />
-            Disconnect
-          </button>
-        </div>
-
-        <div className="grid grid-cols-4 gap-4 mb-8 stagger-children">
-          <StatCard
-            icon={Shield}
-            label="OpenClaw Version"
-            value={`v${serverInfo.version}`}
-            accent="var(--accent-amber)"
-          />
-          <StatCard
-            icon={Cpu}
-            label="Agents"
-            value={String(serverInfo.agents.length)}
-            accent="var(--accent-blue)"
-          />
-          <StatCard
-            icon={HardDrive}
-            label="Bootstrap Tokens"
-            value={totalTokens.toLocaleString()}
-            accent={totalTokens > 5000 ? "var(--accent-red)" : "var(--accent-green)"}
-          />
-          <StatCard
-            icon={Zap}
-            label="Config Status"
-            value={serverInfo.config ? "Loaded" : "Missing"}
-            accent="var(--accent-purple)"
-          />
-        </div>
-
-        {/* Agents */}
-        <div className="mb-8 animate-fade-in-up" style={{ animationDelay: "0.2s" }}>
-          <h2
-            className="text-xs font-semibold mb-3 tracking-widest"
-            style={{ fontFamily: "var(--font-display)", color: "var(--text-tertiary)" }}
-          >
-            AGENTS
-          </h2>
-          <div className="space-y-2">
-            {serverInfo.agents.length === 0 ? (
-              <div
-                className="p-6 rounded-xl text-center text-sm"
-                style={{
-                  background: "var(--bg-card)",
-                  border: "1px solid var(--border-subtle)",
-                  color: "var(--text-tertiary)",
-                }}
-              >
-                No agents found. Start an OpenClaw agent to see it here.
-              </div>
-            ) : (
-              serverInfo.agents.map((agent) => (
-                <div
-                  key={agent.id}
-                  className="flex items-center gap-4 p-4 rounded-xl"
-                  style={{
-                    background: "var(--bg-card)",
-                    border: "1px solid var(--border-subtle)",
-                  }}
-                >
-                  <div
-                    className="w-10 h-10 rounded-lg flex items-center justify-center text-sm font-bold"
-                    style={{
-                      background: "var(--accent-amber-dim)",
-                      color: "var(--accent-amber)",
-                      fontFamily: "var(--font-display)",
-                    }}
-                  >
-                    {agent.name.charAt(0).toUpperCase()}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-sm truncate">{agent.name}</p>
-                    <p
-                      className="text-xs truncate"
-                      style={{ color: "var(--text-tertiary)", fontFamily: "var(--font-display)" }}
-                    >
-                      {agent.id}
-                    </p>
-                  </div>
-                  <div
-                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs"
-                    style={{
-                      background: agent.hasSession
-                        ? "var(--accent-green-dim)"
-                        : "var(--bg-elevated)",
-                      color: agent.hasSession
-                        ? "var(--accent-green)"
-                        : "var(--text-tertiary)",
-                    }}
-                  >
-                    <div
-                      className="w-1.5 h-1.5 rounded-full"
-                      style={{
-                        background: agent.hasSession
-                          ? "var(--accent-green)"
-                          : "var(--text-tertiary)",
-                      }}
-                    />
-                    {agent.hasSession ? "Active" : "Idle"}
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-
-        {/* Bootstrap files */}
-        <div className="animate-fade-in-up" style={{ animationDelay: "0.3s" }}>
-          <h2
-            className="text-xs font-semibold mb-3 tracking-widest"
-            style={{ fontFamily: "var(--font-display)", color: "var(--text-tertiary)" }}
-          >
-            BOOTSTRAP FILES
-          </h2>
-          <div className="grid grid-cols-2 gap-2">
-            {Object.entries(serverInfo.bootstrapFiles).map(([name, info]) => (
-              <div
-                key={name}
-                className="flex items-center justify-between p-3 rounded-lg"
-                style={{
-                  background: info.exists ? "var(--bg-card)" : "transparent",
-                  border: "1px solid var(--border-subtle)",
-                  opacity: info.exists ? 1 : 0.4,
-                }}
-              >
-                <span
-                  className="text-xs font-medium"
-                  style={{ fontFamily: "var(--font-display)" }}
-                >
-                  {name}
-                </span>
-                {info.exists ? (
-                  <span
-                    className="text-xs px-2 py-0.5 rounded"
-                    style={{
-                      background:
-                        (info.estimatedTokens || 0) > 2000
-                          ? "var(--accent-red-dim)"
-                          : "var(--bg-elevated)",
-                      color:
-                        (info.estimatedTokens || 0) > 2000
-                          ? "var(--accent-red)"
-                          : "var(--text-secondary)",
-                      fontFamily: "var(--font-display)",
-                    }}
-                  >
-                    ~{info.estimatedTokens?.toLocaleString()} tokens
-                  </span>
-                ) : (
-                  <span className="text-xs" style={{ color: "var(--text-tertiary)" }}>
-                    Not found
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // ---- Not Connected: Setup Flow ----
-  return (
-    <div className="min-h-screen flex items-center justify-center p-8">
-      <div className="w-full max-w-xl">
-        {/* Hero */}
-        <div className="text-center mb-10 animate-fade-in-up">
+    <div className="w-full">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
+      />
+      {/* ─── Nav ─────────────────────────────────── */}
+      <nav
+        className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 py-4"
+        style={{
+          background: "rgba(12, 14, 20, 0.8)",
+          backdropFilter: "blur(12px)",
+          borderBottom: "1px solid var(--border-subtle)",
+        }}
+      >
+        <div className="flex items-center gap-3">
           <div
-            className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-5"
+            className="w-8 h-8 rounded-lg flex items-center justify-center"
             style={{
               background: "linear-gradient(135deg, var(--accent-amber), #e67e22)",
-              boxShadow: "var(--shadow-glow-amber)",
             }}
           >
             <span
-              className="text-3xl font-black"
+              className="text-sm font-bold"
               style={{ color: "var(--bg-deep)", fontFamily: "var(--font-display)" }}
             >
               C
             </span>
           </div>
+          <span className="font-bold text-sm" style={{ fontFamily: "var(--font-display)" }}>
+            ClawDoc
+          </span>
+        </div>
+        <div className="flex items-center gap-4">
+          <a
+            href="https://github.com/suyfdong/clawdoc"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 text-xs transition-colors"
+            style={{ color: "var(--text-secondary)" }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = "var(--text-primary)")}
+            onMouseLeave={(e) => (e.currentTarget.style.color = "var(--text-secondary)")}
+          >
+            <Github size={16} />
+            GitHub
+          </a>
+          <Link
+            href="/connect"
+            className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold transition-all"
+            style={{
+              background: "linear-gradient(135deg, var(--accent-amber), #e67e22)",
+              color: "var(--bg-deep)",
+            }}
+          >
+            Get Started
+            <ArrowRight size={12} />
+          </Link>
+        </div>
+      </nav>
+
+      {/* ─── Hero ─────────────────────────────────── */}
+      <section className="pt-32 pb-20 px-6 text-center relative overflow-hidden">
+        {/* Subtle radial glow */}
+        <div
+          className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[500px] pointer-events-none"
+          style={{
+            background: "radial-gradient(ellipse at center, rgba(245,158,66,0.08) 0%, transparent 70%)",
+          }}
+        />
+
+        <div className="relative max-w-3xl mx-auto">
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full mb-6 text-xs" style={{
+            background: "var(--accent-amber-dim)",
+            color: "var(--accent-amber)",
+            fontFamily: "var(--font-display)",
+          }}>
+            <Zap size={12} />
+            Free &amp; open source
+          </div>
+
           <h1
-            className="text-3xl font-bold mb-2"
+            className="text-5xl font-bold leading-tight mb-5"
             style={{ fontFamily: "var(--font-display)" }}
           >
-            ClawDoc
-          </h1>
-          <p className="text-base" style={{ color: "var(--text-secondary)" }}>
-            The visual control panel for OpenClaw.
+            Stop guessing your
             <br />
-            <span style={{ color: "var(--accent-amber)" }}>
-              Drag, drop, done.
-            </span>
-          </p>
-        </div>
-
-        {/* Steps */}
-        <div className="space-y-5 stagger-children">
-          {/* Step 1 */}
-          <div
-            className="rounded-xl p-5"
-            style={{
-              background: "var(--bg-card)",
-              border: "1px solid var(--border-subtle)",
-            }}
-          >
-            <div className="flex items-center gap-3 mb-3">
-              <div
-                className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold"
-                style={{
-                  background: "var(--accent-amber-dim)",
-                  color: "var(--accent-amber)",
-                  fontFamily: "var(--font-display)",
-                }}
-              >
-                1
-              </div>
-              <h2 className="font-semibold text-sm">
-                Install Companion Agent on your server
-              </h2>
-            </div>
-            <div
-              className="flex items-center justify-between rounded-lg px-4 py-3"
+            <span
               style={{
-                background: "var(--bg-deep)",
-                border: "1px solid var(--border-subtle)",
+                background: "linear-gradient(135deg, var(--accent-amber), #e67e22)",
+                WebkitBackgroundClip: "text",
+                WebkitTextFillColor: "transparent",
               }}
             >
-              <div className="flex items-center gap-2 overflow-hidden">
-                <Terminal size={14} style={{ color: "var(--text-tertiary)" }} className="shrink-0" />
-                <code
-                  className="text-xs truncate"
-                  style={{ fontFamily: "var(--font-display)", color: "var(--accent-green)" }}
-                >
-                  {installCommand}
-                </code>
-              </div>
-              <CopyButton text={installCommand} />
-            </div>
-            <p className="text-xs mt-2" style={{ color: "var(--text-tertiary)" }}>
-              Run this on the same machine where OpenClaw is installed.
-            </p>
-          </div>
+              OpenClaw config
+            </span>
+          </h1>
 
-          {/* Step 2 */}
-          <div
-            className="rounded-xl p-5"
-            style={{
-              background: "var(--bg-card)",
-              border: "1px solid var(--border-subtle)",
-            }}
+          <p
+            className="text-lg leading-relaxed max-w-xl mx-auto mb-8"
+            style={{ color: "var(--text-secondary)" }}
           >
-            <div className="flex items-center gap-3 mb-4">
-              <div
-                className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold"
-                style={{
-                  background: "var(--accent-amber-dim)",
-                  color: "var(--accent-amber)",
-                  fontFamily: "var(--font-display)",
-                }}
-              >
-                2
-              </div>
-              <h2 className="font-semibold text-sm">Connect to your Companion Agent</h2>
-            </div>
+            ClawDoc is the visual control panel for OpenClaw.
+            Drag-and-drop model configuration, one-click diagnosis,
+            cost optimization — no more editing JSON in the dark.
+          </p>
 
-            <div className="space-y-3">
-              <div>
-                <label
-                  className="text-xs mb-1.5 block"
-                  style={{ color: "var(--text-secondary)", fontFamily: "var(--font-display)" }}
-                >
-                  Server URL
-                </label>
-                <input
-                  type="text"
-                  placeholder="http://your-server:17017"
-                  value={urlInput}
-                  onChange={(e) => setUrlInput(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-lg text-sm outline-none transition-colors"
-                  style={{
-                    background: "var(--bg-deep)",
-                    border: "1px solid var(--border-default)",
-                    color: "var(--text-primary)",
-                    fontFamily: "var(--font-display)",
-                  }}
-                  onFocus={(e) => (e.currentTarget.style.borderColor = "var(--border-active)")}
-                  onBlur={(e) => (e.currentTarget.style.borderColor = "var(--border-default)")}
-                />
-              </div>
-
-              <div>
-                <label
-                  className="text-xs mb-1.5 block"
-                  style={{ color: "var(--text-secondary)", fontFamily: "var(--font-display)" }}
-                >
-                  Auth Token
-                </label>
-                <input
-                  type="password"
-                  placeholder="Paste the token shown by the agent"
-                  value={tokenInput}
-                  onChange={(e) => setTokenInput(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-lg text-sm outline-none transition-colors"
-                  style={{
-                    background: "var(--bg-deep)",
-                    border: "1px solid var(--border-default)",
-                    color: "var(--text-primary)",
-                    fontFamily: "var(--font-display)",
-                  }}
-                  onFocus={(e) => (e.currentTarget.style.borderColor = "var(--border-active)")}
-                  onBlur={(e) => (e.currentTarget.style.borderColor = "var(--border-default)")}
-                />
-              </div>
-
-              {connectionError && (
-                <div
-                  className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs"
-                  style={{ background: "var(--accent-red-dim)", color: "var(--accent-red)" }}
-                >
-                  <AlertCircle size={14} />
-                  {connectionError}
-                </div>
-              )}
-
-              <button
-                onClick={handleConnect}
-                disabled={isConnecting || !urlInput || !tokenInput}
-                className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-sm font-semibold transition-all"
-                style={{
-                  background:
-                    isConnecting || !urlInput || !tokenInput
-                      ? "var(--bg-elevated)"
-                      : "linear-gradient(135deg, var(--accent-amber), #e67e22)",
-                  color:
-                    isConnecting || !urlInput || !tokenInput
-                      ? "var(--text-tertiary)"
-                      : "var(--bg-deep)",
-                  boxShadow:
-                    !isConnecting && urlInput && tokenInput
-                      ? "var(--shadow-glow-amber)"
-                      : "none",
-                  cursor:
-                    isConnecting || !urlInput || !tokenInput ? "not-allowed" : "pointer",
-                }}
-              >
-                {isConnecting ? (
-                  <>
-                    <Loader2 size={16} className="animate-spin" />
-                    Connecting...
-                  </>
-                ) : (
-                  <>
-                    <Wifi size={16} />
-                    Connect
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-
-          {/* Security note */}
-          <div
-            className="flex items-start gap-3 px-4 py-3 rounded-lg"
-            style={{
-              background: "var(--accent-blue-dim)",
-              border: "1px solid rgba(91, 156, 245, 0.1)",
-            }}
-          >
-            <Shield size={16} style={{ color: "var(--accent-blue)" }} className="shrink-0 mt-0.5" />
-            <p className="text-xs leading-relaxed" style={{ color: "var(--accent-blue)" }}>
-              Your data never leaves your network. ClawDoc communicates directly
-              between your browser and the Companion Agent on your server.
-            </p>
+          <div className="flex items-center justify-center gap-4">
+            <Link
+              href="/connect"
+              className="flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold transition-all"
+              style={{
+                background: "linear-gradient(135deg, var(--accent-amber), #e67e22)",
+                color: "var(--bg-deep)",
+                boxShadow: "var(--shadow-glow-amber)",
+              }}
+            >
+              Connect Your OpenClaw
+              <ArrowRight size={16} />
+            </Link>
+            <Link
+              href="/canvas"
+              className="flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-medium transition-colors"
+              style={{
+                background: "var(--bg-card)",
+                border: "1px solid var(--border-default)",
+                color: "var(--text-secondary)",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.borderColor = "var(--border-active)";
+                e.currentTarget.style.color = "var(--text-primary)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.borderColor = "var(--border-default)";
+                e.currentTarget.style.color = "var(--text-secondary)";
+              }}
+            >
+              Try Demo
+              <ExternalLink size={14} />
+            </Link>
           </div>
         </div>
-      </div>
+      </section>
+
+      {/* ─── Pain Points ──────────────────────────── */}
+      <section className="py-16 px-6">
+        <div className="max-w-4xl mx-auto">
+          <div className="text-center mb-10">
+            <div className="inline-flex items-center gap-2 mb-3">
+              <AlertTriangle size={16} style={{ color: "var(--accent-red)" }} />
+              <span className="text-xs font-semibold tracking-widest" style={{ color: "var(--accent-red)", fontFamily: "var(--font-display)" }}>
+                THE PROBLEM
+              </span>
+            </div>
+            <h2 className="text-2xl font-bold" style={{ fontFamily: "var(--font-display)" }}>
+              OpenClaw is powerful. Configuring it shouldn&apos;t be painful.
+            </h2>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {PAIN_POINTS.map((p, i) => (
+              <div
+                key={i}
+                className="rounded-xl p-5"
+                style={{
+                  background: "var(--bg-card)",
+                  border: "1px solid var(--border-subtle)",
+                }}
+              >
+                <p className="text-sm leading-relaxed mb-3 italic" style={{ color: "var(--text-secondary)" }}>
+                  &ldquo;{p.quote}&rdquo;
+                </p>
+                <p className="text-[10px]" style={{ color: "var(--text-tertiary)", fontFamily: "var(--font-display)" }}>
+                  — {p.source}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ─── Features ─────────────────────────────── */}
+      <section className="py-16 px-6">
+        <div className="max-w-5xl mx-auto">
+          <div className="text-center mb-12">
+            <div className="inline-flex items-center gap-2 mb-3">
+              <CheckCircle2 size={16} style={{ color: "var(--accent-green)" }} />
+              <span className="text-xs font-semibold tracking-widest" style={{ color: "var(--accent-green)", fontFamily: "var(--font-display)" }}>
+                THE SOLUTION
+              </span>
+            </div>
+            <h2 className="text-2xl font-bold mb-3" style={{ fontFamily: "var(--font-display)" }}>
+              Everything you need to master OpenClaw
+            </h2>
+            <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
+              Six tools that replace hours of JSON editing and GPT conversations.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {FEATURES.map((f) => {
+              const Icon = f.icon;
+              return (
+                <Link
+                  key={f.title}
+                  href={f.href}
+                  className="group rounded-xl p-5 transition-all"
+                  style={{
+                    background: "var(--bg-card)",
+                    border: "1px solid var(--border-subtle)",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = `${f.accent}44`;
+                    e.currentTarget.style.transform = "translateY(-2px)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = "var(--border-subtle)";
+                    e.currentTarget.style.transform = "translateY(0)";
+                  }}
+                >
+                  <div
+                    className="w-10 h-10 rounded-xl flex items-center justify-center mb-3"
+                    style={{ background: `${f.accent}15`, color: f.accent }}
+                  >
+                    <Icon size={20} />
+                  </div>
+                  <h3 className="text-sm font-bold mb-1.5" style={{ fontFamily: "var(--font-display)" }}>
+                    {f.title}
+                  </h3>
+                  <p className="text-xs leading-relaxed" style={{ color: "var(--text-secondary)" }}>
+                    {f.desc}
+                  </p>
+                  <div className="flex items-center gap-1 mt-3 text-xs opacity-0 group-hover:opacity-100 transition-opacity" style={{ color: f.accent }}>
+                    Try it <ArrowRight size={10} />
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* ─── How It Works ─────────────────────────── */}
+      <section className="py-16 px-6">
+        <div className="max-w-3xl mx-auto">
+          <div className="text-center mb-12">
+            <h2 className="text-2xl font-bold" style={{ fontFamily: "var(--font-display)" }}>
+              Up and running in 2 minutes
+            </h2>
+          </div>
+
+          <div className="space-y-6">
+            {STEPS.map((step) => (
+              <div
+                key={step.num}
+                className="flex gap-5 items-start"
+              >
+                <div
+                  className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-sm font-bold"
+                  style={{
+                    background: "var(--accent-amber-dim)",
+                    color: "var(--accent-amber)",
+                    fontFamily: "var(--font-display)",
+                  }}
+                >
+                  {step.num}
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-sm font-bold mb-1" style={{ fontFamily: "var(--font-display)" }}>
+                    {step.title}
+                  </h3>
+                  <p className="text-xs mb-2" style={{ color: "var(--text-secondary)" }}>
+                    {step.desc}
+                  </p>
+                  {step.code && (
+                    <div
+                      className="flex items-center gap-2 rounded-lg px-4 py-2.5"
+                      style={{
+                        background: "var(--bg-card)",
+                        border: "1px solid var(--border-subtle)",
+                      }}
+                    >
+                      <Terminal size={12} style={{ color: "var(--text-tertiary)" }} />
+                      <code
+                        className="text-xs"
+                        style={{ fontFamily: "var(--font-display)", color: "var(--accent-green)" }}
+                      >
+                        {step.code}
+                      </code>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ─── FAQ ──────────────────────────────────── */}
+      <section className="py-16 px-6">
+        <div className="max-w-3xl mx-auto">
+          <div className="text-center mb-10">
+            <div className="inline-flex items-center gap-2 mb-3">
+              <HelpCircle size={16} style={{ color: "var(--accent-blue)" }} />
+              <span className="text-xs font-semibold tracking-widest" style={{ color: "var(--accent-blue)", fontFamily: "var(--font-display)" }}>
+                FAQ
+              </span>
+            </div>
+            <h2 className="text-2xl font-bold" style={{ fontFamily: "var(--font-display)" }}>
+              Common questions about OpenClaw configuration
+            </h2>
+          </div>
+
+          <div className="space-y-3">
+            {[
+              {
+                q: "How do I configure OpenClaw models?",
+                a: "With ClawDoc, you drag models from the sidebar onto your agent config canvas. Choose a primary model, fallback, and heartbeat model visually — then click Apply. No JSON editing needed. Without ClawDoc, you edit the openclaw.json file manually.",
+              },
+              {
+                q: "Why is my OpenClaw so expensive?",
+                a: "Common causes: using an expensive model (like Opus) for heartbeat checks, oversized bootstrap files (SOUL.md, MEMORY.md) that add tokens to every message, or missing prompt caching. ClawDoc's Cost Optimizer and Config Diagnosis can identify exactly where your money goes.",
+              },
+              {
+                q: "How do OpenClaw memory layers work?",
+                a: "OpenClaw has multiple memory layers: SOUL.md (persistent personality), USER.md (user preferences), MEMORY.md (accumulated knowledge), and session context. Each gets injected into every message, consuming tokens. ClawDoc's Architecture Guide visualizes all layers and shows their token cost impact.",
+              },
+              {
+                q: "What's the best model for OpenClaw in 2026?",
+                a: "It depends on your use case and budget. Claude Sonnet 4.6 offers the best quality-to-cost ratio for most users. Haiku 3.5 is great for budget setups and heartbeat. Use ClawDoc's Model Wizard to get a personalized recommendation based on your specific needs.",
+              },
+              {
+                q: "How to fix OpenClaw slow response?",
+                a: "Slow responses usually come from: oversized context (check your bootstrap files), wrong model selection, missing fallback configuration, or network issues between your server and the API. ClawDoc's Diagnosis tool checks all of these automatically.",
+              },
+            ].map((faq, i) => (
+              <details
+                key={i}
+                className="group rounded-xl"
+                style={{
+                  background: "var(--bg-card)",
+                  border: "1px solid var(--border-subtle)",
+                }}
+              >
+                <summary
+                  className="flex items-center justify-between px-5 py-4 cursor-pointer list-none text-sm font-medium"
+                  style={{ fontFamily: "var(--font-display)" }}
+                >
+                  {faq.q}
+                  <ChevronDown
+                    size={16}
+                    className="shrink-0 ml-2 transition-transform group-open:rotate-180"
+                    style={{ color: "var(--text-tertiary)" }}
+                  />
+                </summary>
+                <div className="px-5 pb-4">
+                  <p className="text-xs leading-relaxed" style={{ color: "var(--text-secondary)" }}>
+                    {faq.a}
+                  </p>
+                </div>
+              </details>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ─── CTA ──────────────────────────────────── */}
+      <section className="py-20 px-6">
+        <div
+          className="max-w-3xl mx-auto text-center rounded-2xl p-10 relative overflow-hidden"
+          style={{
+            background: "var(--bg-card)",
+            border: "1px solid var(--border-subtle)",
+          }}
+        >
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{
+              background: "radial-gradient(ellipse at center, rgba(245,158,66,0.06) 0%, transparent 70%)",
+            }}
+          />
+          <div className="relative">
+            <h2 className="text-2xl font-bold mb-3" style={{ fontFamily: "var(--font-display)" }}>
+              Ready to take control?
+            </h2>
+            <p className="text-sm mb-6" style={{ color: "var(--text-secondary)" }}>
+              Connect your OpenClaw in 2 minutes. Free forever for single instances.
+            </p>
+            <div className="flex items-center justify-center gap-4">
+              <Link
+                href="/connect"
+                className="flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold"
+                style={{
+                  background: "linear-gradient(135deg, var(--accent-amber), #e67e22)",
+                  color: "var(--bg-deep)",
+                  boxShadow: "var(--shadow-glow-amber)",
+                }}
+              >
+                Get Started Free
+                <ArrowRight size={16} />
+              </Link>
+              <a
+                href="https://github.com/suyfdong/clawdoc"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-medium"
+                style={{
+                  background: "var(--bg-elevated)",
+                  color: "var(--text-secondary)",
+                }}
+              >
+                <Github size={16} />
+                Star on GitHub
+              </a>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ─── Footer ───────────────────────────────── */}
+      <footer
+        className="py-8 px-6 text-center"
+        style={{ borderTop: "1px solid var(--border-subtle)" }}
+      >
+        <div className="flex items-center justify-center gap-2 mb-2">
+          <div
+            className="w-5 h-5 rounded flex items-center justify-center"
+            style={{ background: "linear-gradient(135deg, var(--accent-amber), #e67e22)" }}
+          >
+            <span className="text-[8px] font-bold" style={{ color: "var(--bg-deep)", fontFamily: "var(--font-display)" }}>C</span>
+          </div>
+          <span className="text-xs font-semibold" style={{ fontFamily: "var(--font-display)" }}>ClawDoc</span>
+        </div>
+        <p className="text-xs" style={{ color: "var(--text-tertiary)" }}>
+          Open source visual control panel for OpenClaw.
+        </p>
+        <div className="flex items-center justify-center gap-4 mt-3">
+          <a href="https://github.com/suyfdong/clawdoc" target="_blank" rel="noopener noreferrer" className="text-xs" style={{ color: "var(--text-tertiary)" }}>
+            GitHub
+          </a>
+          <span style={{ color: "var(--text-tertiary)" }}>·</span>
+          <Link href="/connect" className="text-xs" style={{ color: "var(--text-tertiary)" }}>
+            Connect
+          </Link>
+          <span style={{ color: "var(--text-tertiary)" }}>·</span>
+          <Link href="/architecture" className="text-xs" style={{ color: "var(--text-tertiary)" }}>
+            Architecture Guide
+          </Link>
+        </div>
+      </footer>
     </div>
   );
 }

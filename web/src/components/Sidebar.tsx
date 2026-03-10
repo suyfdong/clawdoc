@@ -17,7 +17,7 @@ import {
 import { useState } from "react";
 
 const NAV_ITEMS = [
-  { href: "/", label: "Connect", icon: Plug, requiresConnection: false },
+  { href: "/connect", label: "Connect", icon: Plug, requiresConnection: false },
   {
     href: "/canvas",
     label: "Visual Config",
