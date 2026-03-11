@@ -194,6 +194,22 @@ function AgentConfigNode({ data }: NodeProps<Node<AgentNodeData>>) {
         <Settings2 size={10} />
         <span>{data.subtitle}</span>
       </div>
+
+      {/* Right-side output handle — connects to bootstrap files */}
+      <Handle
+        type="source"
+        position={Position.Right}
+        id="files"
+        style={{
+          width: 10,
+          height: 10,
+          background: "var(--text-tertiary)",
+          border: "2px solid var(--text-tertiary)",
+          right: -6,
+          top: "50%",
+          opacity: 0.5,
+        }}
+      />
     </div>
   );
 }
@@ -348,7 +364,7 @@ function FileNode({ data }: NodeProps<Node<FileNodeData>>) {
   const isHeavy = data.tokens > 2000;
   return (
     <div
-      className="rounded-xl px-5 py-3.5 cursor-pointer transition-all"
+      className="rounded-xl px-5 py-3.5 cursor-pointer transition-all relative"
       onClick={() => data.onView?.(data.filename)}
       style={{
         background: "var(--bg-card)",
@@ -357,6 +373,18 @@ function FileNode({ data }: NodeProps<Node<FileNodeData>>) {
         minWidth: 180,
       }}
     >
+      <Handle
+        type="target"
+        position={Position.Left}
+        style={{
+          width: 8,
+          height: 8,
+          background: "var(--text-tertiary)",
+          border: "2px solid var(--text-tertiary)",
+          left: -5,
+          opacity: 0.4,
+        }}
+      />
       <div className="flex items-center gap-2">
         <FileText size={16} style={{ color: isHeavy ? "var(--accent-red)" : "var(--text-tertiary)" }} />
         <span className="text-sm font-medium">{data.filename}</span>
@@ -554,53 +582,53 @@ const DEMO_ANALYSIS: AnalysisResult = {
         position: { x: 30, y: 670 },
         data: { modelId: "ollama/qwen2.5-coder", name: "Qwen 2.5 Coder", tier: "free", source: "local" },
       },
-      // ── File nodes (bottom right) ──
+      // ── File nodes (right column) ──
       {
         id: "file-soul",
         type: "fileNode",
-        position: { x: 480, y: 850 },
+        position: { x: 960, y: 20 },
         data: { filename: "SOUL.md", tokens: 1250, exists: true, shared: true },
+      },
+      {
+        id: "file-identity",
+        type: "fileNode",
+        position: { x: 960, y: 90 },
+        data: { filename: "IDENTITY.md", tokens: 450, exists: true, shared: true },
       },
       {
         id: "file-user",
         type: "fileNode",
-        position: { x: 680, y: 850 },
+        position: { x: 960, y: 160 },
         data: { filename: "USER.md", tokens: 3800, exists: true, shared: true },
       },
       {
         id: "file-memory",
         type: "fileNode",
-        position: { x: 880, y: 850 },
+        position: { x: 960, y: 230 },
         data: { filename: "MEMORY.md", tokens: 820, exists: true, shared: true },
-      },
-      {
-        id: "file-identity",
-        type: "fileNode",
-        position: { x: 480, y: 920 },
-        data: { filename: "IDENTITY.md", tokens: 450, exists: true, shared: true },
       },
       {
         id: "file-agents",
         type: "fileNode",
-        position: { x: 680, y: 920 },
+        position: { x: 960, y: 310 },
         data: { filename: "AGENTS.md", tokens: 1680, exists: true, shared: true },
       },
       {
         id: "file-tools",
         type: "fileNode",
-        position: { x: 880, y: 920 },
+        position: { x: 960, y: 380 },
         data: { filename: "TOOLS.md", tokens: 2200, exists: true, shared: true },
       },
       {
         id: "file-heartbeat",
         type: "fileNode",
-        position: { x: 580, y: 990 },
+        position: { x: 960, y: 460 },
         data: { filename: "HEARTBEAT.md", tokens: 380, exists: true, shared: true },
       },
       {
         id: "file-bootstrap",
         type: "fileNode",
-        position: { x: 780, y: 990 },
+        position: { x: 960, y: 530 },
         data: { filename: "BOOTSTRAP.md", tokens: 560, exists: true, shared: true },
       },
     ],
@@ -616,6 +644,17 @@ const DEMO_ANALYSIS: AnalysisResult = {
       // Research Agent connections
       { id: "e-gemini-research", source: "model-gemini-pro", target: "agent-research", targetHandle: "primary", animated: true },
       { id: "e-haiku-research", source: "model-haiku", target: "agent-research", targetHandle: "fallback", animated: true },
+      // Agent → File connections (shared bootstrap context)
+      { id: "f-coding-soul", source: "agent-coding", sourceHandle: "files", target: "file-soul", animated: false },
+      { id: "f-coding-identity", source: "agent-coding", sourceHandle: "files", target: "file-identity", animated: false },
+      { id: "f-coding-user", source: "agent-coding", sourceHandle: "files", target: "file-user", animated: false },
+      { id: "f-coding-tools", source: "agent-coding", sourceHandle: "files", target: "file-tools", animated: false },
+      { id: "f-orch-soul", source: "agent-orchestrator", sourceHandle: "files", target: "file-soul", animated: false },
+      { id: "f-orch-agents", source: "agent-orchestrator", sourceHandle: "files", target: "file-agents", animated: false },
+      { id: "f-orch-memory", source: "agent-orchestrator", sourceHandle: "files", target: "file-memory", animated: false },
+      { id: "f-research-soul", source: "agent-research", sourceHandle: "files", target: "file-soul", animated: false },
+      { id: "f-research-user", source: "agent-research", sourceHandle: "files", target: "file-user", animated: false },
+      { id: "f-research-memory", source: "agent-research", sourceHandle: "files", target: "file-memory", animated: false },
     ],
   },
   issues: [
@@ -690,7 +729,22 @@ function CanvasInner() {
     }));
 
     const builtEdges: Edge[] = analysisData.topology.edges.map((e) => {
-      // Find the source model node to get accurate tier color
+      // Agent → File edges: dashed, subtle style
+      const isFileEdge = e.id.startsWith("f-") || e.target.startsWith("file-");
+      if (isFileEdge) {
+        return {
+          ...e,
+          animated: false,
+          style: { stroke: "#5c607866", strokeWidth: 1.5, strokeDasharray: "6 3" },
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            color: "#5c607866",
+            width: 12,
+            height: 12,
+          },
+        };
+      }
+      // Model → Agent edges: solid, colorful
       const sourceNode = analysisData.topology.nodes.find((n) => n.id === e.source);
       const modelId = String(sourceNode?.data?.modelId || e.source);
       const tierColor = TIER_COLORS[guessTier(modelId)] || TIER_COLORS.default;
