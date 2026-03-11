@@ -21,11 +21,41 @@ import { WebSocketServer } from "ws";
 import { watch } from "chokidar";
 import JSON5 from "json5";
 import { createServer } from "http";
-import { readFile, writeFile, readdir, stat, access } from "fs/promises";
-import { join, resolve } from "path";
+import { readFile, writeFile, readdir, stat, access, realpath } from "fs/promises";
+import { join, resolve, relative } from "path";
 import { homedir } from "os";
 import { randomBytes, createHash } from "crypto";
 import { execSync, exec } from "child_process";
+import { loadBrainConfig, getBrainStatus, resetBrainConfig, runAgentLoop, callLLM } from "./llm.js";
+import { createTools } from "./tools.js";
+import { getAnalyzePrompt, getChatPrompt, getQuickOpPrompt } from "./prompts.js";
+
+// ---------------------------------------------------------------------------
+// JSON extraction helper (balanced brace matching instead of greedy regex)
+// ---------------------------------------------------------------------------
+
+function extractBalancedJSON(text) {
+  const start = text.indexOf("{");
+  if (start === -1) return null;
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (escape) { escape = false; continue; }
+    if (ch === "\\") { escape = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) {
+        return JSON.parse(text.slice(start, i + 1));
+      }
+    }
+  }
+  return null;
+}
 
 // ---------------------------------------------------------------------------
 // Config
@@ -187,201 +217,6 @@ async function listAgents(openclawDir) {
   return agents;
 }
 
-// ---------------------------------------------------------------------------
-// Diagnosis engine
-// ---------------------------------------------------------------------------
-
-function diagnoseConfig(config, fileInfos) {
-  const issues = [];
-  let score = 100;
-
-  // Rule 1: No model fallbacks
-  const fallbacks =
-    config?.agents?.defaults?.model?.fallbacks ||
-    config?.model?.fallbacks;
-  if (!fallbacks || fallbacks.length === 0) {
-    issues.push({
-      id: "no-fallbacks",
-      severity: "medium",
-      title: "No model fallbacks configured",
-      description:
-        "If your primary model goes down or rate-limits, your agent will stop working entirely.",
-      fix: {
-        path: "agents.defaults.model.fallbacks",
-        suggestion: '["claude-haiku-3-5", "openai/gpt-4o-mini"]',
-      },
-    });
-    score -= 10;
-  }
-
-  // Rule 2: Expensive heartbeat model
-  const heartbeat =
-    config?.agents?.defaults?.model?.heartbeat ||
-    config?.model?.heartbeat;
-  if (heartbeat) {
-    const expensive = ["opus", "sonnet", "gpt-4o", "gpt-4"];
-    if (expensive.some((e) => heartbeat.toLowerCase().includes(e))) {
-      issues.push({
-        id: "expensive-heartbeat",
-        severity: "high",
-        title: "Heartbeat uses an expensive model",
-        description: `Your heartbeat model is "${heartbeat}". Heartbeats run frequently and don't need intelligence. Switch to a cheap model.`,
-        fix: {
-          path: "agents.defaults.model.heartbeat",
-          suggestion: '"ollama/llama3" or "claude-haiku-3-5"',
-        },
-      });
-      score -= 15;
-    }
-  }
-
-  // Rule 3: memoryFlush disabled
-  const memoryFlush =
-    config?.agents?.defaults?.memoryFlush ?? config?.memoryFlush;
-  if (memoryFlush === false || memoryFlush === undefined) {
-    issues.push({
-      id: "memory-flush-off",
-      severity: "high",
-      title: "Memory flush is disabled (default)",
-      description:
-        "When disabled, important context can be lost when switching models or hitting context limits. This is a known source of 'data residue' problems.",
-      fix: {
-        path: "agents.defaults.memoryFlush",
-        suggestion: "true",
-      },
-    });
-    score -= 15;
-  }
-
-  // Rule 4: Bootstrap files too large
-  const bootstrapFiles = ["SOUL.md", "USER.md", "AGENTS.md", "MEMORY.md"];
-  let totalBootstrapTokens = 0;
-  for (const fname of bootstrapFiles) {
-    const info = fileInfos[fname];
-    if (info && info.exists) {
-      totalBootstrapTokens += info.estimatedTokens;
-    }
-  }
-  if (totalBootstrapTokens > 5000) {
-    issues.push({
-      id: "bootstrap-too-large",
-      severity: "high",
-      title: `Bootstrap files are ~${totalBootstrapTokens.toLocaleString()} tokens`,
-      description: `These files are sent with EVERY message. At current prices, that's ~$${((totalBootstrapTokens / 1000000) * 3).toFixed(4)} per message just for bootstrap overhead.`,
-      fix: {
-        path: "Bootstrap files (SOUL.md, USER.md, etc.)",
-        suggestion:
-          "Keep total bootstrap under 5,000 tokens. Remove redundant content.",
-      },
-    });
-    score -= 15;
-  }
-
-  // Rule 5: maxTokens too high
-  const maxTokens =
-    config?.agents?.defaults?.maxTokens || config?.maxTokens;
-  if (maxTokens && maxTokens > 4096) {
-    issues.push({
-      id: "max-tokens-high",
-      severity: "medium",
-      title: `maxTokens is set to ${maxTokens}`,
-      description:
-        "Higher maxTokens means the model reserves more output capacity, increasing cost. Most tasks work fine with 2048-4096.",
-      fix: {
-        path: "agents.defaults.maxTokens",
-        suggestion: "2048 or 4096",
-      },
-    });
-    score -= 8;
-  }
-
-  // Rule 6: No prompt caching
-  const cacheControl =
-    config?.agents?.defaults?.cacheControlTtl ?? config?.cacheControlTtl;
-  if (cacheControl === undefined || cacheControl === null) {
-    issues.push({
-      id: "no-cache-control",
-      severity: "medium",
-      title: "No prompt caching configured",
-      description:
-        "Without cacheControlTtl, you pay full price for repeated system prompts. Enabling caching can save 50-90% on prompt tokens.",
-      fix: {
-        path: "agents.defaults.cacheControlTtl",
-        suggestion: "300 (5 minutes)",
-      },
-    });
-    score -= 10;
-  }
-
-  // Rule 7: API keys in config (security)
-  const raw = JSON.stringify(config);
-  const keyPatterns = [
-    /sk-[a-zA-Z0-9]{20,}/,
-    /sk-ant-[a-zA-Z0-9-]{20,}/,
-    /key-[a-zA-Z0-9]{20,}/,
-  ];
-  for (const pattern of keyPatterns) {
-    if (pattern.test(raw)) {
-      issues.push({
-        id: "api-key-in-config",
-        severity: "critical",
-        title: "API key detected in configuration",
-        description:
-          "Your config file contains what appears to be a raw API key. This is a security risk. Use environment variables instead.",
-        fix: {
-          path: "Various",
-          suggestion: 'Use $ANTHROPIC_API_KEY or process.env references',
-        },
-      });
-      score -= 25;
-      break;
-    }
-  }
-
-  // Rule 8: No primary model set
-  const primaryModel =
-    config?.agents?.defaults?.model?.primary ||
-    config?.model?.primary;
-  if (!primaryModel) {
-    issues.push({
-      id: "no-primary-model",
-      severity: "medium",
-      title: "No explicit primary model set",
-      description:
-        "Without an explicit primary model, OpenClaw picks a default that may not suit your needs. Set it explicitly to avoid surprises.",
-      fix: {
-        path: "agents.defaults.model.primary",
-        suggestion: '"anthropic/claude-sonnet-4-6" or your preferred model',
-      },
-    });
-    score -= 10;
-  }
-
-  score = Math.max(0, score);
-
-  return {
-    score,
-    grade:
-      score >= 90
-        ? "A"
-        : score >= 75
-          ? "B"
-          : score >= 60
-            ? "C"
-            : score >= 40
-              ? "D"
-              : "F",
-    issues,
-    summary:
-      score >= 90
-        ? "Your configuration looks great!"
-        : score >= 75
-          ? "Good overall, but some optimizations available."
-          : score >= 60
-            ? "Several issues found that may affect performance and cost."
-            : "Significant configuration problems detected. Fixing these will noticeably improve your experience.",
-  };
-}
 
 // ---------------------------------------------------------------------------
 // Express app
@@ -551,105 +386,304 @@ async function main() {
     }
   });
 
-  // ---- Diagnosis ----
+  // ---- LLM Brain endpoints ----
 
-  app.get("/api/diagnose", requireAuth, async (req, res) => {
-    const configResult = await readJsonConfig(
-      join(openclawDir, "openclaw.json")
-    );
-    if (!configResult.ok) {
-      return res
-        .status(500)
-        .json({ error: "Cannot read config: " + configResult.error });
-    }
+  const { tools: llmTools, handlers: toolHandlers } = createTools(openclawDir);
 
-    const fileInfos = {};
-    for (const fname of ["SOUL.md", "USER.md", "AGENTS.md", "MEMORY.md"]) {
-      fileInfos[fname] = await getFileInfo(join(openclawDir, fname));
-    }
+  // Cache the latest analysis for chat context
+  let cachedAnalysis = null;
 
-    const result = diagnoseConfig(configResult.data, fileInfos);
-    res.json(result);
+  // Brain status (no auth needed — only exposes model name, not secrets)
+  app.get("/api/brain/status", async (req, res) => {
+    const status = await getBrainStatus();
+    res.json(status);
   });
 
-  // ---- Apply config change (atomic operation) ----
-
-  app.post("/api/apply", requireAuth, async (req, res) => {
-    const { operation, params } = req.body;
-
-    if (!operation) {
-      return res.status(400).json({ error: "Missing operation" });
+  // Configure brain — save API key from Web UI (no SSH needed)
+  app.post("/api/brain/configure", requireAuth, async (req, res) => {
+    const { apiKey, model } = req.body;
+    if (!apiKey) {
+      return res.status(400).json({ error: "Missing apiKey" });
     }
 
+    const configDir = join(homedir(), ".clawdoc");
+    const configPath = join(configDir, "brain.json");
+
+    // Ensure directory exists
     try {
-      const configPath = join(openclawDir, "openclaw.json");
-      const configResult = await readJsonConfig(configPath);
-      if (!configResult.ok) throw new Error(configResult.error);
+      await access(configDir);
+    } catch {
+      const { mkdir } = await import("fs/promises");
+      await mkdir(configDir, { recursive: true });
+    }
 
-      const config = configResult.data;
+    const config = {
+      provider: "openrouter",
+      model: model || "anthropic/claude-3.5-haiku",
+      apiKey,
+      maxTokens: 4096,
+    };
 
-      switch (operation) {
-        case "set-primary-model": {
-          if (!config.agents) config.agents = {};
-          if (!config.agents.defaults) config.agents.defaults = {};
-          if (!config.agents.defaults.model) config.agents.defaults.model = {};
-          config.agents.defaults.model.primary = params.model;
-          break;
-        }
-        case "set-fallback-models": {
-          if (!config.agents) config.agents = {};
-          if (!config.agents.defaults) config.agents.defaults = {};
-          if (!config.agents.defaults.model) config.agents.defaults.model = {};
-          config.agents.defaults.model.fallbacks = params.models;
-          break;
-        }
-        case "set-heartbeat-model": {
-          if (!config.agents) config.agents = {};
-          if (!config.agents.defaults) config.agents.defaults = {};
-          if (!config.agents.defaults.model) config.agents.defaults.model = {};
-          config.agents.defaults.model.heartbeat = params.model;
-          break;
-        }
-        case "enable-memory-flush": {
-          if (!config.agents) config.agents = {};
-          if (!config.agents.defaults) config.agents.defaults = {};
-          config.agents.defaults.memoryFlush = true;
-          break;
-        }
-        case "set-cache-ttl": {
-          if (!config.agents) config.agents = {};
-          if (!config.agents.defaults) config.agents.defaults = {};
-          config.agents.defaults.cacheControlTtl = params.ttl || 300;
-          break;
-        }
-        case "set-max-tokens": {
-          if (!config.agents) config.agents = {};
-          if (!config.agents.defaults) config.agents.defaults = {};
-          config.agents.defaults.maxTokens = params.maxTokens;
-          break;
-        }
-        default:
-          return res
-            .status(400)
-            .json({ error: `Unknown operation: ${operation}` });
-      }
-
-      // Backup & write
-      const backupPath = join(
-        openclawDir,
-        `openclaw.backup.${Date.now()}.json`
-      );
-      await writeFile(backupPath, configResult.raw, "utf-8");
+    try {
       await writeFile(configPath, JSON.stringify(config, null, 2), "utf-8");
-
-      res.json({
-        ok: true,
-        message: `Operation "${operation}" applied successfully`,
-        config,
-      });
+      // Reset cached config so it reloads
+      resetBrainConfig();
+      res.json({ ok: true, message: "Brain configured successfully" });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
+  });
+
+  // Analyze — LLM explores the OpenClaw installation
+  app.post("/api/analyze", requireAuth, async (req, res) => {
+    const brainConfig = await loadBrainConfig();
+    if (!brainConfig) {
+      return res.status(503).json({
+        error: "Brain not configured. Create ~/.clawdoc/brain.json with your OpenRouter API key.",
+      });
+    }
+
+    // SSE streaming for progress updates
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+
+    const sendEvent = (type, data) => {
+      res.write(`data: ${JSON.stringify({ type, ...data })}\n\n`);
+    };
+
+    try {
+      sendEvent("status", { message: "Starting analysis..." });
+
+      const result = await runAgentLoop({
+        systemPrompt: getAnalyzePrompt(openclawDir),
+        messages: [{ role: "user", content: "Analyze this OpenClaw installation and return the structured JSON." }],
+        tools: llmTools,
+        toolHandlers,
+        maxIterations: 15,
+        onProgress: (info) => {
+          sendEvent("progress", { tool: info.tool, message: `Reading ${info.tool}...` });
+        },
+      });
+
+      // Try to parse the JSON from the LLM response
+      let analysis;
+      try {
+        // Try parsing the whole content as JSON first
+        analysis = JSON.parse(result.content.trim());
+      } catch {
+        // Extract from markdown code block or find balanced JSON
+        try {
+          const codeBlockMatch = result.content.match(/```(?:json)?\s*\n([\s\S]*?)\n```/);
+          if (codeBlockMatch) {
+            analysis = JSON.parse(codeBlockMatch[1]);
+          } else {
+            analysis = extractBalancedJSON(result.content);
+          }
+        } catch {
+          analysis = null;
+        }
+      }
+
+      if (analysis) {
+        cachedAnalysis = analysis;
+        sendEvent("analysis", { data: analysis });
+      } else {
+        sendEvent("error", { message: "Failed to parse analysis result", raw: result.content });
+      }
+
+      sendEvent("done", {});
+      res.end();
+    } catch (err) {
+      sendEvent("error", { message: err.message });
+      res.end();
+    }
+  });
+
+  // Chat — conversational config modification
+  app.post("/api/chat", requireAuth, async (req, res) => {
+    const { message, history = [] } = req.body;
+    if (!message) return res.status(400).json({ error: "Missing message" });
+
+    const brainConfig = await loadBrainConfig();
+    if (!brainConfig) {
+      return res.status(503).json({ error: "Brain not configured." });
+    }
+
+    // SSE streaming
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+
+    const sendEvent = (type, data) => {
+      res.write(`data: ${JSON.stringify({ type, ...data })}\n\n`);
+    };
+
+    try {
+      sendEvent("status", { message: "Thinking..." });
+
+      const messages = [
+        ...history.map((m) => ({ role: m.role, content: m.content })),
+        { role: "user", content: message },
+      ];
+
+      const result = await runAgentLoop({
+        systemPrompt: getChatPrompt(openclawDir, cachedAnalysis),
+        messages,
+        tools: llmTools,
+        toolHandlers,
+        maxIterations: 10,
+        onProgress: (info) => {
+          sendEvent("progress", { tool: info.tool });
+        },
+      });
+
+      // Parse proposed changes if present
+      let proposedChanges = null;
+      const changesMatch = result.content.match(/```json:changes\s*\n([\s\S]*?)\n```/);
+      if (changesMatch) {
+        try {
+          const parsed = JSON.parse(changesMatch[1]);
+          proposedChanges = parsed.proposed_changes || null;
+        } catch {
+          // Ignore parse errors
+        }
+      }
+
+      // Clean content (remove the json:changes block)
+      const cleanContent = result.content.replace(/```json:changes[\s\S]*?```/, "").trim();
+
+      sendEvent("response", {
+        content: cleanContent,
+        proposedChanges,
+      });
+      sendEvent("done", {});
+      res.end();
+    } catch (err) {
+      sendEvent("error", { message: err.message });
+      res.end();
+    }
+  });
+
+  // Quick operation — canvas drag/drop or dropdown action
+  app.post("/api/quick-op", requireAuth, async (req, res) => {
+    const { action, agentId, slot, modelId, params } = req.body;
+    if (!action) return res.status(400).json({ error: "Missing action" });
+
+    const brainConfig = await loadBrainConfig();
+    if (!brainConfig) {
+      return res.status(503).json({ error: "Brain not configured." });
+    }
+
+    try {
+      const userMessage = `The user performed this visual operation on the canvas:
+Action: ${action}
+${agentId ? `Agent: ${agentId}` : ""}
+${slot ? `Slot: ${slot}` : ""}
+${modelId ? `Model: ${modelId}` : ""}
+${params ? `Parameters: ${JSON.stringify(params)}` : ""}
+
+Read the relevant config files and generate the exact changes needed.`;
+
+      const result = await runAgentLoop({
+        systemPrompt: getQuickOpPrompt(openclawDir),
+        messages: [{ role: "user", content: userMessage }],
+        tools: llmTools,
+        toolHandlers,
+        maxIterations: 5,
+      });
+
+      // Parse the JSON response
+      let parsed;
+      try {
+        parsed = JSON.parse(result.content.trim());
+      } catch {
+        try {
+          const codeBlockMatch = result.content.match(/```(?:json)?\s*\n([\s\S]*?)\n```/);
+          if (codeBlockMatch) {
+            parsed = JSON.parse(codeBlockMatch[1]);
+          } else {
+            parsed = extractBalancedJSON(result.content);
+          }
+        } catch {
+          parsed = null;
+        }
+      }
+
+      if (parsed) {
+        res.json(parsed);
+      } else {
+        res.status(500).json({ error: "Failed to process operation", raw: result.content });
+      }
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Apply changes — write proposed file changes (with backup)
+  app.post("/api/apply-changes", requireAuth, async (req, res) => {
+    const { changes } = req.body;
+    if (!changes || !Array.isArray(changes) || changes.length === 0) {
+      return res.status(400).json({ error: "Missing or empty changes array" });
+    }
+
+    const results = [];
+    for (const change of changes) {
+      const { file, content } = change;
+      if (!file || content === undefined) {
+        results.push({ file, ok: false, error: "Missing file or content" });
+        continue;
+      }
+
+      // Sandbox: resolve path within openclawDir only
+      const absPath = resolve(openclawDir, file);
+      const rel = relative(openclawDir, absPath);
+      if (rel.startsWith("..")) {
+        results.push({ file, ok: false, error: "Path escapes sandbox" });
+        continue;
+      }
+      // Also check resolved symlinks
+      try {
+        const realAbs = await realpath(absPath);
+        const realRoot = await realpath(openclawDir);
+        if (!realAbs.startsWith(realRoot)) {
+          results.push({ file, ok: false, error: "Path escapes sandbox via symlink" });
+          continue;
+        }
+      } catch (err) {
+        if (err.code !== "ENOENT") {
+          results.push({ file, ok: false, error: "Path resolution failed" });
+          continue;
+        }
+        // ENOENT = new file, that's OK
+      }
+
+      // Backup existing file
+      try {
+        const current = await readFile(absPath, "utf-8");
+        const backupPath = `${absPath}.backup.${Date.now()}`;
+        await writeFile(backupPath, current, "utf-8");
+      } catch {
+        // New file or can't backup — continue
+      }
+
+      // Write new content
+      try {
+        await writeFile(absPath, content, "utf-8");
+        results.push({ file, ok: true });
+      } catch (err) {
+        results.push({ file, ok: false, error: err.message });
+      }
+    }
+
+    const allOk = results.every((r) => r.ok);
+    res.json({
+      ok: allOk,
+      message: allOk
+        ? `${results.length} file(s) updated successfully`
+        : "Some changes failed",
+      results,
+    });
   });
 
   // ---- Start server ----
@@ -687,14 +721,23 @@ async function main() {
     }
   });
 
-  server.listen(args.port, () => {
+  server.listen(args.port, async () => {
+    const brainStatus = await getBrainStatus();
+
     console.log("");
     console.log("  ╔══════════════════════════════════════════════╗");
-    console.log("  ║         ClawDoc Companion Agent v0.1         ║");
+    console.log("  ║       ClawDoc Companion Agent v0.2.0         ║");
     console.log("  ╠══════════════════════════════════════════════╣");
     console.log(`  ║  OpenClaw dir : ${openclawDir.padEnd(28)}║`);
     console.log(`  ║  Version      : ${version.padEnd(28)}║`);
     console.log(`  ║  Listening on : http://localhost:${String(args.port).padEnd(13)}║`);
+    console.log("  ╠══════════════════════════════════════════════╣");
+    if (brainStatus.configured) {
+      console.log(`  ║  Brain model  : ${(brainStatus.model || "").padEnd(28)}║`);
+    } else {
+      console.log("  ║  Brain        : NOT CONFIGURED               ║");
+      console.log("  ║  Create ~/.clawdoc/brain.json with API key   ║");
+    }
     console.log("  ╠══════════════════════════════════════════════╣");
     console.log("  ║  Your auth token (paste in ClawDoc Web UI):  ║");
     console.log(`  ║  ${authToken}  ║`);

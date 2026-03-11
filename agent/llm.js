@@ -1,0 +1,281 @@
+/**
+ * ClawDoc LLM Brain — OpenRouter client with tool use support
+ *
+ * Calls LLMs via OpenRouter API (compatible with OpenAI chat/completions format).
+ * Supports tool use (function calling) and SSE streaming.
+ *
+ * Config priority:
+ *   1. ~/.clawdoc/brain.json
+ *   2. OPENROUTER_API_KEY environment variable
+ */
+
+import { readFile } from "fs/promises";
+import { join } from "path";
+import { homedir } from "os";
+
+const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
+const DEFAULT_MODEL = "anthropic/claude-3.5-haiku";
+const CONFIG_PATH = join(homedir(), ".clawdoc", "brain.json");
+
+let _config = null;
+
+/**
+ * Load brain config. Returns { model, apiKey, maxTokens } or null if not configured.
+ */
+export async function loadBrainConfig() {
+  if (_config) return _config;
+
+  // Try config file first
+  try {
+    const raw = await readFile(CONFIG_PATH, "utf-8");
+    const parsed = JSON.parse(raw);
+    const apiKey = parsed.apiKey?.startsWith("$")
+      ? process.env[parsed.apiKey.slice(1)]
+      : parsed.apiKey;
+
+    if (apiKey) {
+      _config = {
+        model: parsed.model || DEFAULT_MODEL,
+        apiKey,
+        maxTokens: parsed.maxTokens || 4096,
+      };
+      return _config;
+    }
+  } catch {
+    // Config file doesn't exist or is invalid
+  }
+
+  // Fall back to environment variable
+  const envKey = process.env.OPENROUTER_API_KEY;
+  if (envKey) {
+    _config = {
+      model: DEFAULT_MODEL,
+      apiKey: envKey,
+      maxTokens: 4096,
+    };
+    return _config;
+  }
+
+  return null;
+}
+
+/**
+ * Reset cached config (for testing or after config changes).
+ */
+export function resetBrainConfig() {
+  _config = null;
+}
+
+/**
+ * Get brain status (safe to expose — no secrets).
+ */
+export async function getBrainStatus() {
+  const config = await loadBrainConfig();
+  return {
+    configured: !!config,
+    model: config?.model || null,
+    maxTokens: config?.maxTokens || null,
+    configPath: CONFIG_PATH,
+  };
+}
+
+/**
+ * Call LLM with messages and optional tools. Returns the full response.
+ *
+ * @param {Object} params
+ * @param {Array} params.messages - Chat messages [{ role, content }]
+ * @param {string} [params.systemPrompt] - System prompt
+ * @param {Array} [params.tools] - OpenAI-format tool definitions
+ * @param {number} [params.maxTokens] - Override max tokens
+ * @returns {Promise<{ content: string, toolCalls: Array|null }>}
+ */
+export async function callLLM({ messages, systemPrompt, tools, maxTokens }) {
+  const config = await loadBrainConfig();
+  if (!config) {
+    throw new Error(
+      `Brain not configured. Create ${CONFIG_PATH} with your OpenRouter API key, or set OPENROUTER_API_KEY env var.`
+    );
+  }
+
+  const body = {
+    model: config.model,
+    max_tokens: maxTokens || config.maxTokens,
+    temperature: 0,
+    messages: [
+      ...(systemPrompt ? [{ role: "system", content: systemPrompt }] : []),
+      ...messages,
+    ],
+  };
+
+  if (tools && tools.length > 0) {
+    body.tools = tools;
+  }
+
+  const res = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${config.apiKey}`,
+      "HTTP-Referer": "https://clawdoc.cc",
+      "X-Title": "ClawDoc Brain",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`OpenRouter API error (${res.status}): ${err}`);
+  }
+
+  const data = await res.json();
+  const choice = data.choices?.[0];
+
+  if (!choice) {
+    throw new Error("No response from LLM");
+  }
+
+  return {
+    content: choice.message?.content || "",
+    toolCalls: choice.message?.tool_calls || null,
+    finishReason: choice.finish_reason,
+    usage: data.usage,
+  };
+}
+
+/**
+ * Call LLM with streaming (SSE). Returns a ReadableStream of SSE events.
+ *
+ * @param {Object} params - Same as callLLM
+ * @returns {Promise<ReadableStream>}
+ */
+export async function callLLMStream({ messages, systemPrompt, tools, maxTokens }) {
+  const config = await loadBrainConfig();
+  if (!config) {
+    throw new Error(
+      `Brain not configured. Create ${CONFIG_PATH} with your OpenRouter API key, or set OPENROUTER_API_KEY env var.`
+    );
+  }
+
+  const body = {
+    model: config.model,
+    max_tokens: maxTokens || config.maxTokens,
+    temperature: 0,
+    stream: true,
+    messages: [
+      ...(systemPrompt ? [{ role: "system", content: systemPrompt }] : []),
+      ...messages,
+    ],
+  };
+
+  if (tools && tools.length > 0) {
+    body.tools = tools;
+  }
+
+  const res = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${config.apiKey}`,
+      "HTTP-Referer": "https://clawdoc.cc",
+      "X-Title": "ClawDoc Brain",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`OpenRouter API error (${res.status}): ${err}`);
+  }
+
+  return res.body;
+}
+
+/**
+ * Run an agentic loop: call LLM with tools, execute tool calls, repeat until done.
+ *
+ * @param {Object} params
+ * @param {string} params.systemPrompt
+ * @param {Array} params.messages - Initial messages
+ * @param {Array} params.tools - Tool definitions (OpenAI format)
+ * @param {Object} params.toolHandlers - Map of tool name → async handler function
+ * @param {number} [params.maxIterations=10] - Safety limit
+ * @param {function} [params.onProgress] - Called with status updates
+ * @returns {Promise<{ content: string, messages: Array }>}
+ */
+export async function runAgentLoop({
+  systemPrompt,
+  messages,
+  tools,
+  toolHandlers,
+  maxIterations = 10,
+  onProgress,
+}) {
+  const allMessages = [...messages];
+  let iterations = 0;
+
+  while (iterations < maxIterations) {
+    iterations++;
+
+    const result = await callLLM({
+      systemPrompt,
+      messages: allMessages,
+      tools,
+    });
+
+    // If no tool calls, we're done — append the final assistant response
+    if (!result.toolCalls || result.toolCalls.length === 0) {
+      allMessages.push({ role: "assistant", content: result.content });
+      return { content: result.content, messages: allMessages };
+    }
+
+    // Add assistant message with tool calls
+    allMessages.push({
+      role: "assistant",
+      content: result.content || null,
+      tool_calls: result.toolCalls,
+    });
+
+    // Execute each tool call
+    for (const toolCall of result.toolCalls) {
+      const handler = toolHandlers[toolCall.function.name];
+      if (!handler) {
+        allMessages.push({
+          role: "tool",
+          tool_call_id: toolCall.id,
+          content: JSON.stringify({ error: `Unknown tool: ${toolCall.function.name}` }),
+        });
+        continue;
+      }
+
+      if (onProgress) {
+        onProgress({
+          type: "tool_call",
+          tool: toolCall.function.name,
+          args: toolCall.function.arguments,
+        });
+      }
+
+      try {
+        const args = JSON.parse(toolCall.function.arguments);
+        const toolResult = await handler(args);
+        allMessages.push({
+          role: "tool",
+          tool_call_id: toolCall.id,
+          content: typeof toolResult === "string" ? toolResult : JSON.stringify(toolResult),
+        });
+      } catch (err) {
+        allMessages.push({
+          role: "tool",
+          tool_call_id: toolCall.id,
+          content: JSON.stringify({ error: err.message }),
+        });
+      }
+    }
+  }
+
+  // Hit iteration limit
+  return {
+    content: "Analysis incomplete — reached maximum tool call iterations.",
+    messages: allMessages,
+  };
+}

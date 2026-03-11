@@ -15,6 +15,10 @@ import {
   Cpu,
   HardDrive,
   Zap,
+  Brain,
+  Eye,
+  EyeOff,
+  Key,
 } from "lucide-react";
 
 function CopyButton({ text }: { text: string }) {
@@ -92,14 +96,21 @@ export default function ConnectPage() {
     connectionStatus,
     connectionError,
     serverInfo,
+    brainStatus,
     setServerUrl,
     setAuthToken,
     connect,
     disconnect,
+    configureBrain,
+    fetchBrainStatus,
   } = useAppStore();
 
   const [urlInput, setUrlInput] = useState(serverUrl);
   const [tokenInput, setTokenInput] = useState(authToken);
+  const [apiKeyInput, setApiKeyInput] = useState("");
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [brainSaving, setBrainSaving] = useState(false);
+  const [brainResult, setBrainResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   // Restore saved connection on mount
   useEffect(() => {
@@ -272,6 +283,158 @@ export default function ConnectPage() {
                   </div>
                 </div>
               ))
+            )}
+          </div>
+        </div>
+
+        {/* AI Brain Configuration */}
+        <div className="mb-8 animate-fade-in-up" style={{ animationDelay: "0.25s" }}>
+          <h2
+            className="text-xs font-semibold mb-3 tracking-widest"
+            style={{ fontFamily: "var(--font-display)", color: "var(--text-tertiary)" }}
+          >
+            AI BRAIN
+          </h2>
+          <div
+            className="rounded-xl p-5"
+            style={{
+              background: "var(--bg-card)",
+              border: `1px solid ${brainStatus?.configured ? "var(--accent-green)" : "var(--accent-amber)"}33`,
+            }}
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <div
+                className="w-10 h-10 rounded-lg flex items-center justify-center"
+                style={{
+                  background: brainStatus?.configured ? "var(--accent-green-dim)" : "var(--accent-amber-dim)",
+                  color: brainStatus?.configured ? "var(--accent-green)" : "var(--accent-amber)",
+                }}
+              >
+                <Brain size={20} />
+              </div>
+              <div>
+                <p className="text-sm font-semibold">
+                  {brainStatus?.configured ? "Brain Active" : "Brain Not Configured"}
+                </p>
+                <p className="text-xs" style={{ color: "var(--text-tertiary)" }}>
+                  {brainStatus?.configured
+                    ? `Model: ${brainStatus.model}`
+                    : "Add your OpenRouter API key to enable AI features"}
+                </p>
+              </div>
+              {brainStatus?.configured && (
+                <span
+                  className="ml-auto text-[10px] px-2 py-1 rounded-full font-semibold"
+                  style={{ background: "var(--accent-green-dim)", color: "var(--accent-green)" }}
+                >
+                  Connected
+                </span>
+              )}
+            </div>
+
+            {!brainStatus?.configured && (
+              <div className="space-y-3">
+                <div>
+                  <label
+                    className="text-xs mb-1.5 block"
+                    style={{ color: "var(--text-secondary)", fontFamily: "var(--font-display)" }}
+                  >
+                    OpenRouter API Key
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showApiKey ? "text" : "password"}
+                      placeholder="sk-or-v1-..."
+                      value={apiKeyInput}
+                      onChange={(e) => setApiKeyInput(e.target.value)}
+                      className="w-full px-4 py-2.5 pr-10 rounded-lg text-sm outline-none transition-colors"
+                      style={{
+                        background: "var(--bg-deep)",
+                        border: "1px solid var(--border-default)",
+                        color: "var(--text-primary)",
+                        fontFamily: "var(--font-display)",
+                      }}
+                      onFocus={(e) => (e.currentTarget.style.borderColor = "var(--border-active)")}
+                      onBlur={(e) => (e.currentTarget.style.borderColor = "var(--border-default)")}
+                    />
+                    <button
+                      onClick={() => setShowApiKey(!showApiKey)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2"
+                      style={{ color: "var(--text-tertiary)" }}
+                    >
+                      {showApiKey ? <EyeOff size={14} /> : <Eye size={14} />}
+                    </button>
+                  </div>
+                  <p className="text-[10px] mt-1.5" style={{ color: "var(--text-tertiary)" }}>
+                    Get your key at{" "}
+                    <a
+                      href="https://openrouter.ai/keys"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ color: "var(--accent-amber)" }}
+                    >
+                      openrouter.ai/keys
+                    </a>
+                    . One key supports all models.
+                  </p>
+                </div>
+
+                {brainResult && (
+                  <div
+                    className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs"
+                    style={{
+                      background: brainResult.ok ? "var(--accent-green-dim)" : "var(--accent-red-dim)",
+                      color: brainResult.ok ? "var(--accent-green)" : "var(--accent-red)",
+                    }}
+                  >
+                    {brainResult.ok ? <Check size={12} /> : <AlertCircle size={12} />}
+                    {brainResult.message}
+                  </div>
+                )}
+
+                <button
+                  onClick={async () => {
+                    if (!apiKeyInput.trim()) return;
+                    setBrainSaving(true);
+                    setBrainResult(null);
+                    const result = await configureBrain(apiKeyInput.trim());
+                    setBrainResult(result);
+                    setBrainSaving(false);
+                    if (result.ok) {
+                      setApiKeyInput("");
+                      setTimeout(() => setBrainResult(null), 3000);
+                    }
+                  }}
+                  disabled={brainSaving || !apiKeyInput.trim()}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all"
+                  style={{
+                    background:
+                      brainSaving || !apiKeyInput.trim()
+                        ? "var(--bg-elevated)"
+                        : "linear-gradient(135deg, var(--accent-amber), #e67e22)",
+                    color:
+                      brainSaving || !apiKeyInput.trim()
+                        ? "var(--text-tertiary)"
+                        : "var(--bg-deep)",
+                    boxShadow:
+                      !brainSaving && apiKeyInput.trim()
+                        ? "var(--shadow-glow-amber)"
+                        : "none",
+                  }}
+                >
+                  {brainSaving ? (
+                    <>
+                      <Loader2 size={14} className="animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <Key size={14} />
+                      Configure Brain
+                    </>
+                  )}
+                </button>
+              </div>
             )}
           </div>
         </div>

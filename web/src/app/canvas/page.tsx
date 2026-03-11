@@ -1,7 +1,7 @@
 "use client";
 
-import { useAppStore } from "@/lib/store";
-import { useState, useCallback, useRef, useEffect, useMemo, DragEvent } from "react";
+import { useAppStore, AnalysisResult } from "@/lib/store";
+import { useState, useCallback, useRef, useEffect } from "react";
 import {
   ReactFlow,
   Background,
@@ -23,77 +23,65 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import {
-  LayoutDashboard,
   Cpu,
   Brain,
   Zap,
   Shield,
-  Check,
-  Loader2,
-  GripVertical,
-  X,
   FileText,
   Eye,
   Sparkles,
-  ArrowRight,
-  Settings2,
   Globe,
   Server,
-  Plug,
+  Loader2,
+  X,
+  AlertTriangle,
+  RefreshCw,
+  Settings2,
+  ChevronDown,
 } from "lucide-react";
+import ChatPanel from "@/components/ChatPanel";
 
-// ─── Data ────────────────────────────────────────────────────────
-
-const AVAILABLE_MODELS = [
-  // Anthropic
-  { id: "anthropic/claude-opus-4-6", name: "Claude Opus 4.6", tier: "premium", cost: "~$15 / $75" },
-  { id: "anthropic/claude-sonnet-4-6", name: "Claude Sonnet 4.6", tier: "balanced", cost: "~$3 / $15" },
-  { id: "anthropic/claude-haiku-3-5", name: "Claude Haiku 3.5", tier: "budget", cost: "~$0.25 / $1.25" },
-  // OpenAI
-  { id: "openai/gpt-4o", name: "GPT-4o", tier: "premium", cost: "~$2.50 / $10" },
-  { id: "openai/gpt-4o-mini", name: "GPT-4o Mini", tier: "budget", cost: "~$0.15 / $0.60" },
-  { id: "openai/gpt-4.1", name: "GPT-4.1", tier: "premium", cost: "~$2 / $8" },
-  { id: "openai/gpt-4.1-mini", name: "GPT-4.1 Mini", tier: "budget", cost: "~$0.40 / $1.60" },
-  // Google
-  { id: "google/gemini-2.5-pro", name: "Gemini 2.5 Pro", tier: "premium", cost: "~$1.25 / $10" },
-  { id: "google/gemini-2.5-flash", name: "Gemini 2.5 Flash", tier: "budget", cost: "~$0.15 / $0.60" },
-  // DeepSeek
-  { id: "deepseek/deepseek-v3", name: "DeepSeek V3", tier: "balanced", cost: "~$0.27 / $1.10" },
-  { id: "deepseek/deepseek-r1", name: "DeepSeek R1", tier: "balanced", cost: "~$0.55 / $2.19" },
-  // xAI
-  { id: "xai/grok-3", name: "Grok 3", tier: "premium", cost: "~$3 / $15" },
-  // Local / Free
-  { id: "ollama/llama3", name: "Ollama Llama 3", tier: "free", cost: "Free" },
-  { id: "ollama/mistral", name: "Ollama Mistral", tier: "free", cost: "Free" },
-  { id: "ollama/qwen2.5", name: "Ollama Qwen 2.5", tier: "free", cost: "Free" },
-  { id: "ollama/deepseek-r1", name: "Ollama DeepSeek R1", tier: "free", cost: "Free" },
-];
+// ─── Tier colors for model nodes ──────────────────────────────────
 
 const TIER_COLORS: Record<string, { text: string; bg: string; edge: string }> = {
   premium: { text: "var(--accent-purple)", bg: "var(--accent-purple-dim)", edge: "#a78bfa" },
   balanced: { text: "var(--accent-blue)", bg: "var(--accent-blue-dim)", edge: "#5b9cf5" },
   budget: { text: "var(--accent-green)", bg: "var(--accent-green-dim)", edge: "#4ecdc4" },
   free: { text: "var(--text-secondary)", bg: "var(--bg-elevated)", edge: "#5c6078" },
+  default: { text: "var(--accent-amber)", bg: "var(--accent-amber-dim)", edge: "#f59e42" },
 };
 
-type SlotId = "primary" | "fallback" | "heartbeat";
+function guessTier(modelId: string): string {
+  const id = modelId.toLowerCase();
+  if (id.includes("opus") || (id.includes("gpt-4o") && !id.includes("mini")) || id.includes("grok-3")) return "premium";
+  if (id.includes("sonnet") || id.includes("deepseek")) return "balanced";
+  if (id.includes("haiku") || id.includes("mini") || id.includes("flash")) return "budget";
+  if (id.includes("ollama") || id.includes("local")) return "free";
+  return "default";
+}
 
-const SLOTS: { id: SlotId; label: string; icon: React.ComponentType<{ size?: number; style?: React.CSSProperties }> }[] = [
-  { id: "primary", label: "Primary Model", icon: Zap },
-  { id: "fallback", label: "Fallback", icon: Shield },
-  { id: "heartbeat", label: "Heartbeat", icon: Brain },
-];
+// ─── Slot icon mapping ────────────────────────────────────────────
 
-// ─── Custom Nodes ────────────────────────────────────────────────
+const SLOT_ICONS: Record<string, React.ComponentType<{ size?: number; style?: React.CSSProperties }>> = {
+  primary: Zap,
+  fallback: Shield,
+  heartbeat: Brain,
+};
+
+// ─── Custom Nodes (dynamic, data-driven) ──────────────────────────
 
 interface AgentNodeData {
   label: string;
   subtitle: string;
-  slots: Record<SlotId, string | null>;
+  slots: Array<{ id: string; label: string; currentValue: string | null }>;
+  availableModels?: Array<{ id: string; name: string }>;
+  onSlotChange?: (slotId: string, modelId: string) => void;
   [key: string]: unknown;
 }
 
 function AgentConfigNode({ data }: NodeProps<Node<AgentNodeData>>) {
+  const slots = data.slots || [];
+
   return (
     <div
       className="rounded-2xl overflow-hidden"
@@ -131,13 +119,13 @@ function AgentConfigNode({ data }: NodeProps<Node<AgentNodeData>>) {
         </div>
       </div>
 
-      {/* Slots */}
+      {/* Dynamic slots */}
       <div className="p-4 space-y-2.5">
-        {SLOTS.map((slot) => {
-          const Icon = slot.icon;
-          const assigned = data.slots[slot.id];
-          const model = assigned ? AVAILABLE_MODELS.find((m) => m.id === assigned) : null;
-          const tierColor = model ? TIER_COLORS[model.tier] : null;
+        {slots.map((slot) => {
+          const Icon = SLOT_ICONS[slot.id] || Settings2;
+          const assigned = slot.currentValue;
+          const tier = assigned ? guessTier(assigned) : null;
+          const tierColor = tier ? TIER_COLORS[tier] : null;
 
           return (
             <div key={slot.id} className="relative">
@@ -166,16 +154,13 @@ function AgentConfigNode({ data }: NodeProps<Node<AgentNodeData>>) {
                 <div className="flex-1 min-w-0">
                   <p
                     className="text-[11px] tracking-wider"
-                    style={{
-                      fontFamily: "var(--font-display)",
-                      color: "var(--text-tertiary)",
-                    }}
+                    style={{ fontFamily: "var(--font-display)", color: "var(--text-tertiary)" }}
                   >
                     {slot.label.toUpperCase()}
                   </p>
-                  {model ? (
+                  {assigned ? (
                     <p className="text-sm font-medium truncate" style={{ color: tierColor?.text }}>
-                      {model.name}
+                      {assigned}
                     </p>
                   ) : (
                     <p className="text-sm" style={{ color: "var(--text-tertiary)" }}>
@@ -183,6 +168,14 @@ function AgentConfigNode({ data }: NodeProps<Node<AgentNodeData>>) {
                     </p>
                   )}
                 </div>
+                {/* Dropdown for quick model change */}
+                {data.availableModels && data.availableModels.length > 0 && (
+                  <SlotDropdown
+                    models={data.availableModels}
+                    currentValue={assigned}
+                    onSelect={(modelId) => data.onSlotChange?.(slot.id, modelId)}
+                  />
+                )}
               </div>
             </div>
           );
@@ -199,23 +192,85 @@ function AgentConfigNode({ data }: NodeProps<Node<AgentNodeData>>) {
         }}
       >
         <Settings2 size={10} />
-        <span>Applies to all agents unless overridden</span>
+        <span>{data.subtitle}</span>
       </div>
     </div>
   );
 }
 
+function SlotDropdown({
+  models,
+  currentValue,
+  onSelect,
+}: {
+  models: Array<{ id: string; name: string }>;
+  currentValue: string | null;
+  onSelect: (modelId: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="relative">
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen(!open);
+        }}
+        className="p-1 rounded transition-colors"
+        style={{ color: "var(--text-tertiary)" }}
+      >
+        <ChevronDown size={12} />
+      </button>
+      {open && (
+        <div
+          className="absolute right-0 top-full mt-1 z-50 rounded-lg overflow-hidden py-1"
+          style={{
+            background: "var(--bg-card)",
+            border: "1px solid var(--border-subtle)",
+            boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+            minWidth: 200,
+            maxHeight: 200,
+            overflowY: "auto",
+          }}
+        >
+          {models.map((m) => (
+            <button
+              key={m.id}
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelect(m.id);
+                setOpen(false);
+              }}
+              className="w-full text-left px-3 py-1.5 text-[11px] transition-colors flex items-center justify-between"
+              style={{
+                color: m.id === currentValue ? "var(--accent-amber)" : "var(--text-secondary)",
+                background: m.id === currentValue ? "var(--accent-amber-dim)" : "transparent",
+              }}
+            >
+              <span>{m.name || m.id}</span>
+              {m.id === currentValue && <Check size={10} />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Model check icon import
+import { Check } from "lucide-react";
+
 interface ModelNodeData {
   modelId: string;
   name: string;
   tier: string;
-  cost: string;
+  source?: string;
   onDelete?: (nodeId: string) => void;
   [key: string]: unknown;
 }
 
 function ModelNode({ id, data }: NodeProps<Node<ModelNodeData>>) {
-  const tierColor = TIER_COLORS[data.tier] || TIER_COLORS.free;
+  const tierColor = TIER_COLORS[data.tier] || TIER_COLORS.default;
 
   return (
     <div
@@ -227,7 +282,6 @@ function ModelNode({ id, data }: NodeProps<Node<ModelNodeData>>) {
         minWidth: 210,
       }}
     >
-      {/* Delete button */}
       {data.onDelete && (
         <button
           onClick={(e) => { e.stopPropagation(); data.onDelete!(id); }}
@@ -245,23 +299,25 @@ function ModelNode({ id, data }: NodeProps<Node<ModelNodeData>>) {
         className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
         style={{ background: tierColor.bg }}
       >
-        {data.modelId.startsWith("anthropic") ? (
+        {data.modelId.includes("anthropic") || data.modelId.includes("claude") ? (
           <Sparkles size={16} style={{ color: tierColor.text }} />
-        ) : data.modelId.startsWith("openai") ? (
+        ) : data.modelId.includes("openai") || data.modelId.includes("gpt") ? (
           <Globe size={16} style={{ color: tierColor.text }} />
-        ) : data.modelId.startsWith("google") ? (
+        ) : data.modelId.includes("google") || data.modelId.includes("gemini") ? (
           <Zap size={16} style={{ color: tierColor.text }} />
-        ) : data.modelId.startsWith("deepseek") || data.modelId.startsWith("xai") ? (
-          <Brain size={16} style={{ color: tierColor.text }} />
-        ) : (
+        ) : data.modelId.includes("ollama") || data.modelId.includes("local") ? (
           <Server size={16} style={{ color: tierColor.text }} />
+        ) : (
+          <Brain size={16} style={{ color: tierColor.text }} />
         )}
       </div>
       <div className="min-w-0">
         <p className="text-sm font-semibold truncate">{data.name}</p>
-        <p className="text-[11px]" style={{ fontFamily: "var(--font-display)", color: "var(--text-tertiary)" }}>
-          {data.cost}
-        </p>
+        {data.source && (
+          <p className="text-[10px]" style={{ fontFamily: "var(--font-display)", color: "var(--text-tertiary)" }}>
+            {data.source}
+          </p>
+        )}
       </div>
       <Handle
         type="source"
@@ -283,7 +339,8 @@ interface FileNodeData {
   filename: string;
   tokens: number;
   exists: boolean;
-  onView: (filename: string) => void;
+  shared?: boolean;
+  onView?: (filename: string) => void;
   [key: string]: unknown;
 }
 
@@ -292,7 +349,7 @@ function FileNode({ data }: NodeProps<Node<FileNodeData>>) {
   return (
     <div
       className="rounded-xl px-5 py-3.5 cursor-pointer transition-all"
-      onClick={() => data.onView(data.filename)}
+      onClick={() => data.onView?.(data.filename)}
       style={{
         background: "var(--bg-card)",
         border: `1px solid ${isHeavy ? "rgba(239,100,97,0.3)" : "var(--border-subtle)"}`,
@@ -303,6 +360,14 @@ function FileNode({ data }: NodeProps<Node<FileNodeData>>) {
       <div className="flex items-center gap-2">
         <FileText size={16} style={{ color: isHeavy ? "var(--accent-red)" : "var(--text-tertiary)" }} />
         <span className="text-sm font-medium">{data.filename}</span>
+        {data.shared && (
+          <span
+            className="text-[8px] px-1 py-0.5 rounded"
+            style={{ background: "var(--accent-blue-dim)", color: "var(--accent-blue)" }}
+          >
+            shared
+          </span>
+        )}
       </div>
       <div
         className="text-xs mt-1.5 flex items-center gap-1"
@@ -326,332 +391,273 @@ const nodeTypes = {
   fileNode: FileNode,
 };
 
-// ─── Sidebar Model Card ─────────────────────────────────────────
+// ─── Demo data (when not connected) ──────────────────────────────
 
-function SidebarModelCard({ model }: { model: (typeof AVAILABLE_MODELS)[0] }) {
-  const tierColor = TIER_COLORS[model.tier];
+const DEMO_ANALYSIS: AnalysisResult = {
+  version: "demo",
+  summary: "Demo mode — connect to your OpenClaw server to see real data",
+  agents: [
+    {
+      id: "default",
+      name: "Default Agent",
+      model: { primary: "anthropic/claude-sonnet-4-6", fallbacks: ["anthropic/claude-haiku-3-5"], heartbeat: "ollama/llama3" },
+      configSource: "agents.defaults",
+      hasOwnSoul: false,
+      slots: [
+        { id: "primary", label: "Primary Model", currentValue: "anthropic/claude-sonnet-4-6" },
+        { id: "fallback", label: "Fallback", currentValue: "anthropic/claude-haiku-3-5" },
+        { id: "heartbeat", label: "Heartbeat", currentValue: "ollama/llama3" },
+      ],
+    },
+  ],
+  availableModels: [
+    { id: "anthropic/claude-sonnet-4-6", name: "Claude Sonnet 4.6", source: "config", recommended: true },
+    { id: "anthropic/claude-haiku-3-5", name: "Claude Haiku 3.5", source: "config", recommended: false },
+    { id: "ollama/llama3", name: "Ollama Llama 3", source: "config", recommended: false },
+  ],
+  sharedFiles: {
+    "SOUL.md": { tokens: 1250, shared: true, path: "SOUL.md" },
+    "USER.md": { tokens: 3800, shared: true, path: "USER.md" },
+    "MEMORY.md": { tokens: 820, shared: true, path: "MEMORY.md" },
+  },
+  topology: {
+    nodes: [
+      {
+        id: "agent-default",
+        type: "agentConfig",
+        position: { x: 400, y: 80 },
+        data: {
+          label: "Default Agent",
+          subtitle: "All agents inherit this",
+          slots: [
+            { id: "primary", label: "Primary Model", currentValue: "anthropic/claude-sonnet-4-6" },
+            { id: "fallback", label: "Fallback", currentValue: "anthropic/claude-haiku-3-5" },
+            { id: "heartbeat", label: "Heartbeat", currentValue: "ollama/llama3" },
+          ],
+        },
+      },
+      {
+        id: "model-sonnet",
+        type: "modelNode",
+        position: { x: 30, y: 60 },
+        data: { modelId: "anthropic/claude-sonnet-4-6", name: "Claude Sonnet 4.6", tier: "balanced" },
+      },
+      {
+        id: "model-haiku",
+        type: "modelNode",
+        position: { x: 30, y: 160 },
+        data: { modelId: "anthropic/claude-haiku-3-5", name: "Claude Haiku 3.5", tier: "budget" },
+      },
+      {
+        id: "model-llama",
+        type: "modelNode",
+        position: { x: 30, y: 260 },
+        data: { modelId: "ollama/llama3", name: "Ollama Llama 3", tier: "free" },
+      },
+      {
+        id: "file-soul",
+        type: "fileNode",
+        position: { x: 380, y: 420 },
+        data: { filename: "SOUL.md", tokens: 1250, exists: true, shared: true },
+      },
+      {
+        id: "file-user",
+        type: "fileNode",
+        position: { x: 580, y: 420 },
+        data: { filename: "USER.md", tokens: 3800, exists: true, shared: true },
+      },
+    ],
+    edges: [
+      { id: "e-sonnet-primary", source: "model-sonnet", target: "agent-default", targetHandle: "primary", animated: true },
+      { id: "e-haiku-fallback", source: "model-haiku", target: "agent-default", targetHandle: "fallback", animated: true },
+      { id: "e-llama-heartbeat", source: "model-llama", target: "agent-default", targetHandle: "heartbeat", animated: true },
+    ],
+  },
+  issues: [],
+};
 
-  const onDragStart = (e: DragEvent) => {
-    e.dataTransfer.setData("application/clawdoc-model", JSON.stringify(model));
-    e.dataTransfer.effectAllowed = "move";
-  };
-
-  return (
-    <div
-      draggable
-      onDragStart={onDragStart}
-      className="flex items-center gap-2.5 p-2.5 rounded-lg cursor-grab active:cursor-grabbing transition-all group"
-      style={{
-        background: "var(--bg-card)",
-        border: "1px solid var(--border-subtle)",
-      }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.borderColor = tierColor.edge + "66";
-        e.currentTarget.style.background = "var(--bg-card-hover)";
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.borderColor = "var(--border-subtle)";
-        e.currentTarget.style.background = "var(--bg-card)";
-      }}
-    >
-      <GripVertical
-        size={12}
-        style={{ color: "var(--text-tertiary)" }}
-        className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
-      />
-      <div className="flex-1 min-w-0">
-        <p className="text-[11px] font-medium truncate">{model.name}</p>
-        <p
-          className="text-[10px]"
-          style={{ fontFamily: "var(--font-display)", color: "var(--text-tertiary)" }}
-        >
-          {model.cost}
-        </p>
-      </div>
-      <span
-        className="text-[9px] px-1.5 py-0.5 rounded capitalize shrink-0"
-        style={{ background: tierColor.bg, color: tierColor.text }}
-      >
-        {model.tier}
-      </span>
-    </div>
-  );
-}
-
-// ─── Main Canvas (inner, needs ReactFlowProvider) ────────────────
+// ─── Main Canvas ──────────────────────────────────────────────────
 
 function CanvasInner() {
-  const { connectionStatus, serverInfo, applyOperation } = useAppStore();
-  const isConnected = connectionStatus === "connected";
-  const reactFlowWrapper = useRef<HTMLDivElement>(null);
-  const { screenToFlowPosition } = useReactFlow();
+  const {
+    connectionStatus,
+    analysis,
+    analysisLoading,
+    analysisError,
+    runAnalysis,
+    quickOp,
+    serverInfo,
+    brainStatus,
+  } = useAppStore();
 
-  const [applying, setApplying] = useState(false);
-  const [applyResult, setApplyResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const isConnected = connectionStatus === "connected";
+  const effectiveAnalysis = analysis || (!isConnected ? DEMO_ANALYSIS : null);
+
   const [viewingFile, setViewingFile] = useState<string | null>(null);
   const [fileContent, setFileContent] = useState<string | null>(null);
   const [loadingFile, setLoadingFile] = useState(false);
 
-  // Extract current config (use demo data when disconnected)
-  const config = serverInfo?.config as Record<string, unknown> | null;
-  const agentsConfig = config?.agents as Record<string, unknown> | undefined;
-  const defaultsConfig = agentsConfig?.defaults as Record<string, unknown> | undefined;
-  const modelConfig = defaultsConfig?.model as Record<string, unknown> | undefined;
+  // Use refs for handlers so buildFromAnalysis always gets current versions
+  const handleSlotChangeRef = useRef<(agentNodeId: string, slotId: string, modelId: string) => void>(() => {});
+  const handleDeleteNodeRef = useRef<(nodeId: string) => void>(() => {});
+  const handleViewFileRef = useRef<(filename: string) => void>(() => {});
 
-  const currentPrimary = (modelConfig?.primary as string) || (isConnected ? null : "anthropic/claude-sonnet-4-6");
-  const currentFallbacks = (modelConfig?.fallbacks as string[]) || (isConnected ? [] : ["anthropic/claude-haiku-3-5"]);
-  const currentHeartbeat = (modelConfig?.heartbeat as string) || (isConnected ? null : "ollama/llama3");
-
-  // Demo bootstrap files when disconnected
-  const bootstrapFiles = serverInfo?.bootstrapFiles || (!isConnected ? {
-    "SOUL.md": { exists: true, estimatedTokens: 1250 },
-    "USER.md": { exists: true, estimatedTokens: 3800 },
-    "MEMORY.md": { exists: true, estimatedTokens: 820 },
-  } as Record<string, { exists: boolean; estimatedTokens: number }> : null);
-
-  // Track pending slot assignments (from edge connections)
-  const [slotAssignments, setSlotAssignments] = useState<Record<SlotId, string | null>>({
-    primary: null,
-    fallback: null,
-    heartbeat: null,
-  });
-
-  // Merged view: pending override or current
-  const effectiveSlots: Record<SlotId, string | null> = {
-    primary: slotAssignments.primary || currentPrimary,
-    fallback: slotAssignments.fallback || currentFallbacks[0] || null,
-    heartbeat: slotAssignments.heartbeat || currentHeartbeat,
-  };
-
-  const hasPendingChanges = Object.values(slotAssignments).some((v) => v !== null);
-  const [showHelp, setShowHelp] = useState(true);
-
-  // Stable ref for delete handler (needed in buildInitialState before hooks)
-  const deleteNodeRef = useRef<(nodeId: string) => void>(() => {});
-
-  // ─── Build initial nodes & edges ────────────────────────────
-
-  const buildInitialState = useCallback(() => {
-    const initialNodes: Node[] = [];
-    const initialEdges: Edge[] = [];
-
-    // Agent config node (center)
-    initialNodes.push({
-      id: "agent-config",
-      type: "agentConfig",
-      position: { x: 400, y: 100 },
-      data: { label: "Default Agent Config", subtitle: "All agents inherit this", slots: effectiveSlots },
+  // Build nodes/edges from analysis topology
+  function buildFromAnalysis(analysisData: AnalysisResult) {
+    const builtNodes: Node[] = analysisData.topology.nodes.map((n) => ({
+      ...n,
       draggable: true,
-    });
-
-    // Place model nodes that are currently assigned
-    const assignedModels = new Set<string>();
-    let modelY = 60;
-
-    const placeAssigned = (modelId: string | null, slotId: SlotId) => {
-      if (!modelId || assignedModels.has(modelId)) return;
-      assignedModels.add(modelId);
-
-      const model = AVAILABLE_MODELS.find((m) => m.id === modelId);
-      if (!model) return;
-
-      const nodeId = `model-${modelId}`;
-      initialNodes.push({
-        id: nodeId,
-        type: "modelNode",
-        position: { x: 50, y: modelY },
-        data: { modelId: model.id, name: model.name, tier: model.tier, cost: model.cost, onDelete: (id: string) => deleteNodeRef.current(id) },
-        draggable: true,
-      });
-
-      const tierColor = TIER_COLORS[model.tier];
-      initialEdges.push({
-        id: `edge-${nodeId}-${slotId}`,
-        source: nodeId,
-        target: "agent-config",
-        targetHandle: slotId,
-        animated: true,
-        style: { stroke: tierColor?.edge || "#f59e42", strokeWidth: 2 },
-        markerEnd: { type: MarkerType.ArrowClosed, color: tierColor?.edge || "#f59e42", width: 16, height: 16 },
-      });
-
-      modelY += 90;
-    };
-
-    placeAssigned(effectiveSlots.primary, "primary");
-    placeAssigned(effectiveSlots.fallback, "fallback");
-    placeAssigned(effectiveSlots.heartbeat, "heartbeat");
-
-    // Bootstrap file nodes (below agent)
-    if (bootstrapFiles) {
-      let fileX = 380;
-      Object.entries(bootstrapFiles)
-        .filter(([, info]) => info.exists)
-        .forEach(([name, info]) => {
-          initialNodes.push({
-            id: `file-${name}`,
-            type: "fileNode",
-            position: { x: fileX, y: 440 },
-            data: {
-              filename: name,
-              tokens: info.estimatedTokens || 0,
-              exists: info.exists,
-              onView: handleViewFile,
-            },
-            draggable: true,
-          });
-          fileX += 200;
-        });
-    }
-
-    return { initialNodes, initialEdges };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [serverInfo, bootstrapFiles, currentPrimary, currentFallbacks, currentHeartbeat]);
-
-  const { initialNodes, initialEdges } = useMemo(() => buildInitialState(), [buildInitialState]);
-
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
-
-  // ─── Delete a model node and its edges ──────────────────────
-
-  const handleDeleteNode = useCallback((nodeId: string) => {
-    setEdges((eds) => {
-      const edgesToRemove = eds.filter((e) => e.source === nodeId);
-      edgesToRemove.forEach((e) => {
-        if (e.targetHandle) {
-          setSlotAssignments((prev) => ({ ...prev, [e.targetHandle as SlotId]: null }));
-        }
-      });
-      return eds.filter((e) => e.source !== nodeId && e.target !== nodeId);
-    });
-    setNodes((nds) => nds.filter((n) => n.id !== nodeId));
-  }, [setEdges, setNodes]);
-
-  // Assign to ref so buildInitialState closures can use it
-  deleteNodeRef.current = handleDeleteNode;
-
-  // ─── Delete an edge (click to remove) ──────────────────────
-
-  const handleEdgeClick = useCallback((_: React.MouseEvent, edge: Edge) => {
-    if (edge.targetHandle) {
-      setSlotAssignments((prev) => ({ ...prev, [edge.targetHandle as SlotId]: null }));
-    }
-    setEdges((eds) => eds.filter((e) => e.id !== edge.id));
-    if (edge.targetHandle) {
-      setNodes((nds) =>
-        nds.map((n) => {
-          if (n.id === "agent-config") {
-            return {
-              ...n,
-              data: {
-                ...n.data,
-                slots: { ...(n.data as AgentNodeData).slots, [edge.targetHandle as SlotId]: null },
+      data: {
+        ...n.data,
+        // Inject available models for agent nodes
+        ...(n.type === "agentConfig"
+          ? {
+              availableModels: analysisData.availableModels,
+              onSlotChange: (slotId: string, modelId: string) => {
+                handleSlotChangeRef.current(n.id, slotId, modelId);
               },
-            };
-          }
-          return n;
-        })
-      );
-    }
-  }, [setEdges, setNodes]);
+            }
+          : {}),
+        // Inject file viewer for file nodes
+        ...(n.type === "fileNode"
+          ? { onView: (filename: string) => handleViewFileRef.current(filename) }
+          : {}),
+        // Inject delete for model nodes
+        ...(n.type === "modelNode"
+          ? { onDelete: (nodeId: string) => handleDeleteNodeRef.current(nodeId) }
+          : {}),
+      },
+    }));
 
-  // Update agent node data when slots change
+    const builtEdges: Edge[] = analysisData.topology.edges.map((e) => {
+      // Find the source model node to get accurate tier color
+      const sourceNode = analysisData.topology.nodes.find((n) => n.id === e.source);
+      const modelId = String(sourceNode?.data?.modelId || e.source);
+      const tierColor = TIER_COLORS[guessTier(modelId)] || TIER_COLORS.default;
+      return {
+        ...e,
+        animated: e.animated ?? true,
+        style: { stroke: tierColor.edge, strokeWidth: 2 },
+        markerEnd: {
+          type: MarkerType.ArrowClosed,
+          color: tierColor.edge,
+          width: 16,
+          height: 16,
+        },
+      };
+    });
+
+    return { builtNodes, builtEdges };
+  }
+
+  const initial = effectiveAnalysis
+    ? buildFromAnalysis(effectiveAnalysis)
+    : { builtNodes: [], builtEdges: [] };
+
+  const [nodes, setNodes, onNodesChange] = useNodesState(initial.builtNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(initial.builtEdges);
+
+  // Update nodes/edges when analysis changes
   useEffect(() => {
+    if (effectiveAnalysis) {
+      const { builtNodes, builtEdges } = buildFromAnalysis(effectiveAnalysis);
+      setNodes(builtNodes);
+      setEdges(builtEdges);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveAnalysis, setNodes, setEdges]);
+
+  // Auto-run analysis on first connect
+  useEffect(() => {
+    if (isConnected && !analysis && !analysisLoading && brainStatus?.configured) {
+      runAnalysis();
+    }
+  }, [isConnected, analysis, analysisLoading, brainStatus, runAnalysis]);
+
+  // ─── Handlers (using refs to avoid stale closures) ──────
+
+  function handleDeleteNode(nodeId: string) {
+    setEdges((eds) => eds.filter((e) => e.source !== nodeId && e.target !== nodeId));
+    setNodes((nds) => nds.filter((n) => n.id !== nodeId));
+  }
+  handleDeleteNodeRef.current = handleDeleteNode;
+
+  function handleSlotChange(agentNodeId: string, slotId: string, modelId: string) {
+    if (isConnected && brainStatus?.configured) {
+      quickOp({
+        action: "assign-model",
+        agentId: agentNodeId.replace("agent-", ""),
+        slot: slotId,
+        modelId,
+      });
+    }
+    // Optimistically update the node
     setNodes((nds) =>
       nds.map((n) => {
-        if (n.id === "agent-config") {
-          return { ...n, data: { ...n.data, slots: effectiveSlots } };
+        if (n.id === agentNodeId && n.type === "agentConfig") {
+          const nodeData = n.data as AgentNodeData;
+          return {
+            ...n,
+            data: {
+              ...nodeData,
+              slots: nodeData.slots.map((s) =>
+                s.id === slotId ? { ...s, currentValue: modelId } : s
+              ),
+            },
+          };
         }
         return n;
       })
     );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveSlots.primary, effectiveSlots.fallback, effectiveSlots.heartbeat]);
-
-  // ─── Edge connection handler ────────────────────────────────
+  }
+  handleSlotChangeRef.current = handleSlotChange;
 
   const onConnect = useCallback(
     (connection: Connection) => {
       if (!connection.source || !connection.targetHandle) return;
 
-      const slotId = connection.targetHandle as SlotId;
       const sourceNode = nodes.find((n) => n.id === connection.source);
       if (!sourceNode || sourceNode.type !== "modelNode") return;
 
       const modelId = (sourceNode.data as ModelNodeData).modelId;
-      const model = AVAILABLE_MODELS.find((m) => m.id === modelId);
-      const tierColor = model ? TIER_COLORS[model.tier] : null;
+      const tier = guessTier(modelId);
+      const tierColor = TIER_COLORS[tier];
 
       // Remove existing edges to same slot
-      setEdges((eds) => eds.filter((e) => e.targetHandle !== slotId));
+      setEdges((eds) => eds.filter((e) => e.targetHandle !== connection.targetHandle));
 
-      // Add new edge
       const newEdge: Edge = {
         ...connection,
-        id: `edge-${connection.source}-${slotId}`,
+        id: `edge-${connection.source}-${connection.targetHandle}`,
         animated: true,
-        style: { stroke: tierColor?.edge || "#f59e42", strokeWidth: 2 },
+        style: { stroke: tierColor.edge, strokeWidth: 2 },
         markerEnd: {
           type: MarkerType.ArrowClosed,
-          color: tierColor?.edge || "#f59e42",
+          color: tierColor.edge,
           width: 16,
           height: 16,
         },
       };
 
       setEdges((eds) => addEdge(newEdge, eds));
-      setSlotAssignments((prev) => ({ ...prev, [slotId]: modelId }));
+
+      // Trigger slot change on the agent node (via ref to avoid stale closure)
+      if (connection.target) {
+        handleSlotChangeRef.current(connection.target, connection.targetHandle, modelId);
+      }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [nodes, setEdges]
   );
 
-  // ─── Drag from sidebar → drop on canvas ─────────────────────
-
-  const onDragOver = useCallback((event: DragEvent) => {
-    event.preventDefault();
-    event.dataTransfer.dropEffect = "move";
-  }, []);
-
-  const onDrop = useCallback(
-    (event: DragEvent) => {
-      event.preventDefault();
-      const raw = event.dataTransfer.getData("application/clawdoc-model");
-      if (!raw) return;
-
-      const model = JSON.parse(raw) as (typeof AVAILABLE_MODELS)[0];
-      const nodeId = `model-${model.id}`;
-
-      // Don't create duplicate
-      if (nodes.find((n) => n.id === nodeId)) return;
-
-      const position = screenToFlowPosition({
-        x: event.clientX,
-        y: event.clientY,
-      });
-
-      const newNode: Node = {
-        id: nodeId,
-        type: "modelNode",
-        position,
-        data: { modelId: model.id, name: model.name, tier: model.tier, cost: model.cost, onDelete: (id: string) => deleteNodeRef.current(id) },
-        draggable: true,
-      };
-
-      setNodes((nds) => [...nds, newNode]);
-    },
-    [nodes, screenToFlowPosition, setNodes]
-  );
-
-  // ─── File viewer ────────────────────────────────────────────
+  // ─── File viewer ──────────────────────────────────────────
 
   const DEMO_FILE_CONTENT: Record<string, string> = {
-    "SOUL.md": `# Agent Persona\n\nYou are a helpful AI assistant named Atlas.\nYou are friendly, concise, and professional.\n\n## Core Values\n- Be honest and transparent\n- Prioritize user safety\n- Admit when you don't know something\n\n## Communication Style\n- Use clear, simple language\n- Break complex topics into steps\n- Ask clarifying questions when needed`,
-    "USER.md": `# User Profile\n\nName: Demo User\nTimezone: UTC+8\nLanguage: English (primary), Chinese\n\n## Preferences\n- Prefers concise responses\n- Likes code examples with explanations\n- Working on a SaaS product\n- Uses VS Code + Terminal\n\n## Context\n- Running OpenClaw on Ubuntu 22.04 (Tencent Cloud)\n- 3 active agents: research, coding, social-media\n- Monthly budget target: $50\n- Primary stack: TypeScript, React, Node.js`,
-    "MEMORY.md": `# Session Memory\n\n## Recent Topics\n- Discussed API rate limiting strategies\n- Reviewed database migration plan\n\n## Key Decisions\n- Using Redis for caching\n- Switched from Opus to Sonnet for cost savings`,
+    "SOUL.md": `# Agent Persona\n\nYou are a helpful AI assistant named Atlas.\nYou are friendly, concise, and professional.\n\n## Core Values\n- Be honest and transparent\n- Prioritize user safety\n- Admit when you don't know something`,
+    "USER.md": `# User Profile\n\nName: Demo User\nTimezone: UTC+8\n\n## Preferences\n- Prefers concise responses\n- Working on a SaaS product\n- Uses VS Code + Terminal\n- Primary stack: TypeScript, React, Node.js`,
+    "MEMORY.md": `# Session Memory\n\n## Recent Topics\n- Discussed API rate limiting\n- Reviewed database migration plan`,
   };
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   function handleViewFile(filename: string) {
     if (viewingFile === filename) {
       setViewingFile(null);
@@ -662,7 +668,6 @@ function CanvasInner() {
     setLoadingFile(true);
 
     if (!isConnected) {
-      // Demo mode: show mock content
       setTimeout(() => {
         setFileContent(DEMO_FILE_CONTENT[filename] || "# Empty file\n\nNo content yet.");
         setLoadingFile(false);
@@ -679,35 +684,9 @@ function CanvasInner() {
       .catch(() => setFileContent("Failed to load file content"))
       .finally(() => setLoadingFile(false));
   }
+  handleViewFileRef.current = handleViewFile;
 
-  // ─── Apply changes ─────────────────────────────────────────
-
-  const handleApply = async () => {
-    setApplying(true);
-    setApplyResult(null);
-    try {
-      const ops: Promise<unknown>[] = [];
-      if (slotAssignments.primary) {
-        ops.push(applyOperation("set-primary-model", { model: slotAssignments.primary }));
-      }
-      if (slotAssignments.fallback) {
-        ops.push(applyOperation("set-fallback-models", { models: [slotAssignments.fallback] }));
-      }
-      if (slotAssignments.heartbeat) {
-        ops.push(applyOperation("set-heartbeat-model", { model: slotAssignments.heartbeat }));
-      }
-      await Promise.all(ops);
-      setApplyResult({ ok: true, message: "Configuration updated successfully!" });
-      setSlotAssignments({ primary: null, fallback: null, heartbeat: null });
-    } catch {
-      setApplyResult({ ok: false, message: "Failed to apply changes." });
-    } finally {
-      setApplying(false);
-      setTimeout(() => setApplyResult(null), 4000);
-    }
-  };
-
-  // ─── Render ─────────────────────────────────────────────────
+  // ─── Render ───────────────────────────────────────────────
 
   return (
     <div className="h-screen flex flex-col">
@@ -721,99 +700,168 @@ function CanvasInner() {
             Visual Config
           </h1>
           <p className="text-[11px]" style={{ color: "var(--text-tertiary)" }}>
-            Drag models from the sidebar → drop on canvas → connect to agent slots
+            {effectiveAnalysis?.summary || "Connect to analyze your OpenClaw installation"}
           </p>
           {!isConnected && (
             <span
               className="inline-flex items-center gap-1.5 mt-1 text-[10px] px-2 py-0.5 rounded-full"
               style={{ background: "var(--accent-amber-dim)", color: "var(--accent-amber)", fontFamily: "var(--font-display)" }}
             >
-              DEMO MODE — connect to apply changes
+              DEMO MODE — connect to see your real config
             </span>
           )}
         </div>
         <div className="flex items-center gap-3">
-          {applyResult && (
-            <div
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs animate-fade-in-up"
-              style={{
-                background: applyResult.ok ? "var(--accent-green-dim)" : "var(--accent-red-dim)",
-                color: applyResult.ok ? "var(--accent-green)" : "var(--accent-red)",
-              }}
-            >
-              {applyResult.ok ? <Check size={12} /> : <X size={12} />}
-              {applyResult.message}
-            </div>
-          )}
-          {hasPendingChanges && (
+          {isConnected && (
             <button
-              onClick={isConnected ? handleApply : undefined}
-              disabled={applying || !isConnected}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold transition-all"
+              onClick={runAnalysis}
+              disabled={analysisLoading}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs transition-all"
               style={{
-                background: !isConnected
-                  ? "var(--bg-elevated)"
-                  : applying
-                    ? "var(--bg-elevated)"
-                    : "linear-gradient(135deg, var(--accent-amber), #e67e22)",
-                color: !isConnected
-                  ? "var(--text-tertiary)"
-                  : applying
-                    ? "var(--text-tertiary)"
-                    : "var(--bg-deep)",
-                boxShadow: (!isConnected || applying) ? "none" : "var(--shadow-glow-amber)",
-                cursor: !isConnected ? "not-allowed" : "pointer",
+                background: "var(--bg-elevated)",
+                color: "var(--text-secondary)",
+                border: "1px solid var(--border-subtle)",
               }}
-              title={!isConnected ? "Connect to your OpenClaw instance first" : ""}
             >
-              {applying ? (
-                <>
-                  <Loader2 size={14} className="animate-spin" />
-                  Applying...
-                </>
-              ) : !isConnected ? (
-                <>
-                  <Check size={14} />
-                  Connect to Apply
-                </>
-              ) : (
-                <>
-                  <Check size={14} />
-                  Apply Changes
-                </>
-              )}
+              <RefreshCw size={12} className={analysisLoading ? "animate-spin" : ""} />
+              {analysisLoading ? "Analyzing..." : "Re-analyze"}
             </button>
           )}
         </div>
       </div>
 
       <div className="flex-1 flex min-h-0">
-        {/* Left sidebar: model library */}
+        {/* Left sidebar: analysis summary + models */}
         <div
-          className="w-60 shrink-0 flex flex-col"
+          className="w-56 shrink-0 flex flex-col"
           style={{ borderRight: "1px solid var(--border-subtle)", background: "var(--bg-panel)" }}
         >
           <div className="p-3 flex-1 overflow-y-auto space-y-4">
-            {/* Models section */}
-            <div>
-              <h2
-                className="text-[10px] font-semibold tracking-widest mb-2 px-1"
-                style={{ fontFamily: "var(--font-display)", color: "var(--text-tertiary)" }}
-              >
-                MODELS — DRAG TO CANVAS
-              </h2>
-              <p className="text-[9px] px-1 mb-2" style={{ color: "var(--text-tertiary)", fontFamily: "var(--font-display)" }}>
-                Prices are est. per 1M input/output tokens
-              </p>
-              <div className="space-y-1.5">
-                {AVAILABLE_MODELS.map((model) => (
-                  <SidebarModelCard key={model.id} model={model} />
-                ))}
+            {/* Analysis status */}
+            {analysisLoading && (
+              <div className="flex items-center gap-2 px-2 py-3 text-xs" style={{ color: "var(--text-tertiary)" }}>
+                <Loader2 size={14} className="animate-spin" />
+                <span>Analyzing config...</span>
               </div>
-            </div>
+            )}
 
-            {/* Bootstrap files */}
-            {bootstrapFiles && (
+            {analysisError && (
+              <div
+                className="rounded-lg p-3 text-xs"
+                style={{ background: "var(--accent-red-dim)", color: "var(--accent-red)" }}
+              >
+                <div className="flex items-center gap-1.5 mb-1">
+                  <AlertTriangle size={12} />
+                  <span className="font-semibold">Analysis Error</span>
+                </div>
+                <p style={{ color: "var(--text-secondary)" }}>{analysisError}</p>
+              </div>
+            )}
+
+            {/* Agents summary */}
+            {effectiveAnalysis && (
+              <div>
+                <h2
+                  className="text-[10px] font-semibold tracking-widest mb-2 px-1"
+                  style={{ fontFamily: "var(--font-display)", color: "var(--text-tertiary)" }}
+                >
+                  AGENTS ({effectiveAnalysis.agents.length})
+                </h2>
+                <div className="space-y-1.5">
+                  {effectiveAnalysis.agents.map((agent) => (
+                    <div
+                      key={agent.id}
+                      className="px-2.5 py-2 rounded-lg"
+                      style={{ background: "var(--bg-card)", border: "1px solid var(--border-subtle)" }}
+                    >
+                      <p className="text-[11px] font-medium">{agent.name}</p>
+                      <p className="text-[9px]" style={{ color: "var(--text-tertiary)", fontFamily: "var(--font-display)" }}>
+                        {agent.configSource}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Available models */}
+            {effectiveAnalysis && effectiveAnalysis.availableModels.length > 0 && (
+              <div>
+                <h2
+                  className="text-[10px] font-semibold tracking-widest mb-2 px-1"
+                  style={{ fontFamily: "var(--font-display)", color: "var(--text-tertiary)" }}
+                >
+                  MODELS IN USE
+                </h2>
+                <div className="space-y-1">
+                  {effectiveAnalysis.availableModels.map((m) => (
+                    <div
+                      key={m.id}
+                      className="px-2.5 py-1.5 rounded-lg flex items-center gap-2"
+                      style={{ background: "var(--bg-card)", border: "1px solid var(--border-subtle)" }}
+                    >
+                      <div
+                        className="w-2 h-2 rounded-full shrink-0"
+                        style={{ background: TIER_COLORS[guessTier(m.id)]?.edge || "var(--text-tertiary)" }}
+                      />
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-medium truncate">{m.name || m.id}</p>
+                        <p className="text-[9px]" style={{ color: "var(--text-tertiary)", fontFamily: "var(--font-display)" }}>
+                          {m.source}
+                        </p>
+                      </div>
+                      {m.recommended && (
+                        <span
+                          className="text-[8px] px-1 py-0.5 rounded shrink-0"
+                          style={{ background: "var(--accent-green-dim)", color: "var(--accent-green)" }}
+                        >
+                          rec
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Issues count */}
+            {effectiveAnalysis && effectiveAnalysis.issues.length > 0 && (
+              <div>
+                <h2
+                  className="text-[10px] font-semibold tracking-widest mb-2 px-1"
+                  style={{ fontFamily: "var(--font-display)", color: "var(--accent-red)" }}
+                >
+                  ISSUES ({effectiveAnalysis.issues.length})
+                </h2>
+                <div className="space-y-1">
+                  {effectiveAnalysis.issues.slice(0, 3).map((issue) => (
+                    <div
+                      key={issue.id}
+                      className="px-2.5 py-1.5 rounded-lg text-[10px]"
+                      style={{
+                        background: issue.severity === "critical" ? "var(--accent-red-dim)" : "var(--bg-card)",
+                        border: "1px solid var(--border-subtle)",
+                        color: issue.severity === "critical" ? "var(--accent-red)" : "var(--text-secondary)",
+                      }}
+                    >
+                      {issue.title}
+                    </div>
+                  ))}
+                  {effectiveAnalysis.issues.length > 3 && (
+                    <a
+                      href="/diagnose"
+                      className="text-[10px] px-2.5 py-1"
+                      style={{ color: "var(--accent-amber)" }}
+                    >
+                      +{effectiveAnalysis.issues.length - 3} more — view all
+                    </a>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Shared files */}
+            {effectiveAnalysis && Object.keys(effectiveAnalysis.sharedFiles).length > 0 && (
               <div>
                 <h2
                   className="text-[10px] font-semibold tracking-widest mb-2 px-1"
@@ -821,76 +869,46 @@ function CanvasInner() {
                 >
                   MEMORY FILES
                 </h2>
-                <div className="space-y-1.5">
-                  {Object.entries(bootstrapFiles)
-                    .filter(([, info]) => info.exists)
-                    .map(([name, info]) => (
-                      <button
-                        key={name}
-                        onClick={() => handleViewFile(name)}
-                        className="w-full flex items-center justify-between p-2.5 rounded-lg text-left transition-colors"
+                <div className="space-y-1">
+                  {Object.entries(effectiveAnalysis.sharedFiles).map(([name, info]) => (
+                    <button
+                      key={name}
+                      onClick={() => handleViewFile(name)}
+                      className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-left transition-colors"
+                      style={{
+                        background: viewingFile === name ? "var(--accent-amber-dim)" : "var(--bg-card)",
+                        border: "1px solid var(--border-subtle)",
+                      }}
+                    >
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <FileText size={10} style={{ color: "var(--text-tertiary)" }} />
+                        <span className="text-[10px] font-medium truncate">{name}</span>
+                      </div>
+                      <span
+                        className="text-[9px] shrink-0"
                         style={{
-                          background: viewingFile === name ? "var(--accent-amber-dim)" : "var(--bg-card)",
-                          border: "1px solid var(--border-subtle)",
+                          color: info.tokens > 2000 ? "var(--accent-red)" : "var(--text-tertiary)",
+                          fontFamily: "var(--font-display)",
                         }}
                       >
-                        <div className="flex items-center gap-2 min-w-0">
-                          <FileText size={12} style={{ color: "var(--text-tertiary)" }} />
-                          <span className="text-[11px] font-medium truncate">{name}</span>
-                        </div>
-                        <span
-                          className="text-[10px] shrink-0"
-                          style={{
-                            color: (info.estimatedTokens || 0) > 2000 ? "var(--accent-red)" : "var(--text-tertiary)",
-                            fontFamily: "var(--font-display)",
-                          }}
-                        >
-                          {info.estimatedTokens?.toLocaleString()}t
-                        </span>
-                      </button>
-                    ))}
+                        {info.tokens.toLocaleString()}t
+                      </span>
+                    </button>
+                  ))}
                 </div>
               </div>
             )}
           </div>
-
-          {/* Connect CTA in demo mode */}
-          {!isConnected && (
-            <a
-              href="/"
-              className="mx-3 mb-3 px-3 py-2.5 rounded-lg flex items-center gap-2 text-[11px] font-medium transition-colors text-center"
-              style={{ background: "var(--accent-amber-dim)", color: "var(--accent-amber)" }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = "var(--accent-amber-glow)")}
-              onMouseLeave={(e) => (e.currentTarget.style.background = "var(--accent-amber-dim)")}
-            >
-              <Plug size={12} />
-              <span>Connect your OpenClaw to apply changes for real</span>
-            </a>
-          )}
-
-          {/* Pending changes indicator */}
-          {hasPendingChanges && isConnected && (
-            <div
-              className="mx-3 mb-3 px-3 py-2 rounded-lg flex items-center gap-2 text-[10px]"
-              style={{ background: "var(--accent-amber-dim)", color: "var(--accent-amber)" }}
-            >
-              <ArrowRight size={10} />
-              <span>Unsaved changes</span>
-            </div>
-          )}
         </div>
 
         {/* React Flow canvas */}
-        <div className="flex-1 relative" ref={reactFlowWrapper}>
+        <div className="flex-1 relative">
           <ReactFlow
             nodes={nodes}
             edges={edges}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
-            onEdgeClick={handleEdgeClick}
-            onDragOver={onDragOver}
-            onDrop={onDrop}
             nodeTypes={nodeTypes}
             fitView
             fitViewOptions={{ padding: 0.3 }}
@@ -927,60 +945,19 @@ function CanvasInner() {
                 if (node.type === "agentConfig") return "#f59e42";
                 if (node.type === "fileNode") return "#5c6078";
                 const data = node.data as ModelNodeData;
-                return TIER_COLORS[data?.tier]?.edge || "#5c6078";
+                return TIER_COLORS[data?.tier]?.edge || TIER_COLORS[guessTier(data?.modelId || "")]?.edge || "#5c6078";
               }}
             />
           </ReactFlow>
-
-          {/* Help overlay */}
-          {showHelp && (
-            <div
-              className="absolute top-4 right-4 z-10 rounded-xl p-4 animate-fade-in-up"
-              style={{
-                background: "var(--bg-card)",
-                border: "1px solid var(--border-subtle)",
-                boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
-                maxWidth: 260,
-              }}
-            >
-              <div className="flex items-center justify-between mb-3">
-                <p className="text-xs font-bold" style={{ fontFamily: "var(--font-display)" }}>
-                  How to use
-                </p>
-                <button
-                  onClick={() => setShowHelp(false)}
-                  className="p-0.5 rounded"
-                  style={{ color: "var(--text-tertiary)" }}
-                >
-                  <X size={12} />
-                </button>
-              </div>
-              <div className="space-y-2.5 text-xs" style={{ color: "var(--text-secondary)" }}>
-                <div className="flex gap-2">
-                  <span className="shrink-0 w-5 h-5 rounded flex items-center justify-center text-[10px] font-bold" style={{ background: "var(--accent-amber-dim)", color: "var(--accent-amber)" }}>1</span>
-                  <span><strong>Drag</strong> a model from the left panel onto the canvas</span>
-                </div>
-                <div className="flex gap-2">
-                  <span className="shrink-0 w-5 h-5 rounded flex items-center justify-center text-[10px] font-bold" style={{ background: "var(--accent-amber-dim)", color: "var(--accent-amber)" }}>2</span>
-                  <span><strong>Connect</strong> by dragging from the model&apos;s <span style={{ color: "var(--accent-green)" }}>right dot</span> to an agent <span style={{ color: "var(--accent-blue)" }}>left dot</span></span>
-                </div>
-                <div className="flex gap-2">
-                  <span className="shrink-0 w-5 h-5 rounded flex items-center justify-center text-[10px] font-bold" style={{ background: "var(--accent-amber-dim)", color: "var(--accent-amber)" }}>3</span>
-                  <span><strong>Remove</strong> — hover a model and click the <span style={{ color: "var(--accent-red)" }}>red X</span>, or click a connection line to delete it</span>
-                </div>
-                <div className="flex gap-2">
-                  <span className="shrink-0 w-5 h-5 rounded flex items-center justify-center text-[10px] font-bold" style={{ background: "var(--accent-amber-dim)", color: "var(--accent-amber)" }}>4</span>
-                  <span><strong>Apply</strong> — click the Apply button (when connected to your OpenClaw)</span>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
+
+        {/* Chat panel (right side, sibling of canvas) */}
+        <ChatPanel />
 
         {/* Right panel: File viewer */}
         {viewingFile && (
           <div
-            className="w-80 shrink-0 flex flex-col"
+            className="w-72 shrink-0 flex flex-col"
             style={{ borderLeft: "1px solid var(--border-subtle)", background: "var(--bg-panel)" }}
           >
             <div
@@ -989,10 +966,7 @@ function CanvasInner() {
             >
               <div className="flex items-center gap-2">
                 <Eye size={14} style={{ color: "var(--accent-amber)" }} />
-                <span
-                  className="text-sm font-medium"
-                  style={{ fontFamily: "var(--font-display)" }}
-                >
+                <span className="text-sm font-medium" style={{ fontFamily: "var(--font-display)" }}>
                   {viewingFile}
                 </span>
               </div>
@@ -1009,10 +983,7 @@ function CanvasInner() {
               ) : (
                 <pre
                   className="text-xs leading-relaxed whitespace-pre-wrap"
-                  style={{
-                    color: "var(--text-secondary)",
-                    fontFamily: "var(--font-display)",
-                  }}
+                  style={{ color: "var(--text-secondary)", fontFamily: "var(--font-display)" }}
                 >
                   {fileContent}
                 </pre>
@@ -1025,7 +996,7 @@ function CanvasInner() {
   );
 }
 
-// ─── Wrapper with ReactFlowProvider ─────────────────────────────
+// ─── Wrapper ─────────────────────────────────────────────────────
 
 export default function CanvasPage() {
   return (
