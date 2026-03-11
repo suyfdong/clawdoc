@@ -74,8 +74,8 @@ export default function Sidebar() {
         borderRight: "1px solid var(--border-subtle)",
       }}
     >
-      {/* Logo area */}
-      <div className="flex items-center gap-3 px-4 h-16 shrink-0">
+      {/* Logo area — links back to landing page */}
+      <Link href="/" className="flex items-center gap-3 px-4 h-16 shrink-0 transition-opacity hover:opacity-80">
         <div
           className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
           style={{
@@ -99,7 +99,7 @@ export default function Sidebar() {
             </p>
           </div>
         )}
-      </div>
+      </Link>
 
       {/* Connection status */}
       {!collapsed && (
