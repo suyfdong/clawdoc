@@ -394,86 +394,246 @@ const nodeTypes = {
 // ─── Demo data (when not connected) ──────────────────────────────
 
 const DEMO_ANALYSIS: AnalysisResult = {
-  version: "demo",
-  summary: "Demo mode — connect to your OpenClaw server to see real data",
+  version: "0.4.2",
+  summary: "3 agents configured · 8 models in use · 2 issues found — connect to see your real config",
   agents: [
     {
-      id: "default",
-      name: "Default Agent",
-      model: { primary: "anthropic/claude-sonnet-4-6", fallbacks: ["anthropic/claude-haiku-3-5"], heartbeat: "ollama/llama3" },
-      configSource: "agents.defaults",
-      hasOwnSoul: false,
+      id: "coding",
+      name: "Coding Agent",
+      model: { primary: "anthropic/claude-sonnet-4-6", fallbacks: ["deepseek/deepseek-chat-v3"], heartbeat: "ollama/qwen2.5-coder" },
+      configSource: "agents/coding/agent.json",
+      hasOwnSoul: true,
       slots: [
         { id: "primary", label: "Primary Model", currentValue: "anthropic/claude-sonnet-4-6" },
+        { id: "fallback", label: "Fallback", currentValue: "deepseek/deepseek-chat-v3" },
+        { id: "heartbeat", label: "Heartbeat", currentValue: "ollama/qwen2.5-coder" },
+      ],
+    },
+    {
+      id: "orchestrator",
+      name: "Orchestrator",
+      model: { primary: "anthropic/claude-opus-4-6", fallbacks: ["openai/gpt-4o"], heartbeat: "google/gemini-2.0-flash" },
+      configSource: "agents/orchestrator/agent.json",
+      hasOwnSoul: false,
+      slots: [
+        { id: "primary", label: "Primary Model", currentValue: "anthropic/claude-opus-4-6" },
+        { id: "fallback", label: "Fallback", currentValue: "openai/gpt-4o" },
+        { id: "heartbeat", label: "Heartbeat", currentValue: "google/gemini-2.0-flash" },
+      ],
+    },
+    {
+      id: "research",
+      name: "Research Agent",
+      model: { primary: "google/gemini-2.5-pro", fallbacks: ["anthropic/claude-haiku-3-5"], heartbeat: null },
+      configSource: "agents/research/agent.json",
+      hasOwnSoul: false,
+      slots: [
+        { id: "primary", label: "Primary Model", currentValue: "google/gemini-2.5-pro" },
         { id: "fallback", label: "Fallback", currentValue: "anthropic/claude-haiku-3-5" },
-        { id: "heartbeat", label: "Heartbeat", currentValue: "ollama/llama3" },
       ],
     },
   ],
   availableModels: [
-    { id: "anthropic/claude-sonnet-4-6", name: "Claude Sonnet 4.6", source: "config", recommended: true },
-    { id: "anthropic/claude-haiku-3-5", name: "Claude Haiku 3.5", source: "config", recommended: false },
-    { id: "ollama/llama3", name: "Ollama Llama 3", source: "config", recommended: false },
+    { id: "anthropic/claude-opus-4-6", name: "Claude Opus 4.6", source: "orchestrator", recommended: true },
+    { id: "anthropic/claude-sonnet-4-6", name: "Claude Sonnet 4.6", source: "coding", recommended: true },
+    { id: "anthropic/claude-haiku-3-5", name: "Claude Haiku 3.5", source: "research fallback", recommended: false },
+    { id: "openai/gpt-4o", name: "GPT-4o", source: "orchestrator fallback", recommended: false },
+    { id: "openai/gpt-4o-mini", name: "GPT-4o Mini", source: "available", recommended: false },
+    { id: "google/gemini-2.5-pro", name: "Gemini 2.5 Pro", source: "research", recommended: true },
+    { id: "google/gemini-2.0-flash", name: "Gemini 2.0 Flash", source: "orchestrator heartbeat", recommended: false },
+    { id: "deepseek/deepseek-chat-v3", name: "DeepSeek V3", source: "coding fallback", recommended: true },
+    { id: "deepseek/deepseek-reasoner", name: "DeepSeek R1", source: "available", recommended: false },
+    { id: "x-ai/grok-3", name: "Grok 3", source: "available", recommended: false },
+    { id: "x-ai/grok-3-mini", name: "Grok 3 Mini", source: "available", recommended: false },
+    { id: "meta-llama/llama-3.1-405b", name: "Llama 3.1 405B", source: "available", recommended: false },
+    { id: "ollama/qwen2.5-coder", name: "Qwen 2.5 Coder", source: "coding heartbeat (local)", recommended: false },
+    { id: "ollama/llama3", name: "Llama 3 (local)", source: "available (local)", recommended: false },
+    { id: "mistralai/mistral-large", name: "Mistral Large", source: "available", recommended: false },
+    { id: "cohere/command-r-plus", name: "Command R+", source: "available", recommended: false },
   ],
   sharedFiles: {
     "SOUL.md": { tokens: 1250, shared: true, path: "SOUL.md" },
     "USER.md": { tokens: 3800, shared: true, path: "USER.md" },
     "MEMORY.md": { tokens: 820, shared: true, path: "MEMORY.md" },
+    "IDENTITY.md": { tokens: 450, shared: true, path: "IDENTITY.md" },
+    "AGENTS.md": { tokens: 1680, shared: true, path: "AGENTS.md" },
+    "TOOLS.md": { tokens: 2200, shared: true, path: "TOOLS.md" },
+    "HEARTBEAT.md": { tokens: 380, shared: true, path: "HEARTBEAT.md" },
+    "BOOTSTRAP.md": { tokens: 560, shared: true, path: "BOOTSTRAP.md" },
   },
   topology: {
     nodes: [
+      // ── Agent nodes (center) ──
       {
-        id: "agent-default",
+        id: "agent-coding",
         type: "agentConfig",
-        position: { x: 400, y: 80 },
+        position: { x: 480, y: 20 },
         data: {
-          label: "Default Agent",
-          subtitle: "All agents inherit this",
+          label: "Coding Agent",
+          subtitle: "agents/coding/agent.json",
           slots: [
             { id: "primary", label: "Primary Model", currentValue: "anthropic/claude-sonnet-4-6" },
-            { id: "fallback", label: "Fallback", currentValue: "anthropic/claude-haiku-3-5" },
-            { id: "heartbeat", label: "Heartbeat", currentValue: "ollama/llama3" },
+            { id: "fallback", label: "Fallback", currentValue: "deepseek/deepseek-chat-v3" },
+            { id: "heartbeat", label: "Heartbeat", currentValue: "ollama/qwen2.5-coder" },
           ],
         },
       },
       {
+        id: "agent-orchestrator",
+        type: "agentConfig",
+        position: { x: 480, y: 320 },
+        data: {
+          label: "Orchestrator",
+          subtitle: "agents/orchestrator/agent.json",
+          slots: [
+            { id: "primary", label: "Primary Model", currentValue: "anthropic/claude-opus-4-6" },
+            { id: "fallback", label: "Fallback", currentValue: "openai/gpt-4o" },
+            { id: "heartbeat", label: "Heartbeat", currentValue: "google/gemini-2.0-flash" },
+          ],
+        },
+      },
+      {
+        id: "agent-research",
+        type: "agentConfig",
+        position: { x: 480, y: 600 },
+        data: {
+          label: "Research Agent",
+          subtitle: "agents/research/agent.json",
+          slots: [
+            { id: "primary", label: "Primary Model", currentValue: "google/gemini-2.5-pro" },
+            { id: "fallback", label: "Fallback", currentValue: "anthropic/claude-haiku-3-5" },
+          ],
+        },
+      },
+      // ── Model nodes (left) ──
+      {
+        id: "model-opus",
+        type: "modelNode",
+        position: { x: 30, y: 30 },
+        data: { modelId: "anthropic/claude-opus-4-6", name: "Claude Opus 4.6", tier: "premium" },
+      },
+      {
         id: "model-sonnet",
         type: "modelNode",
-        position: { x: 30, y: 60 },
+        position: { x: 30, y: 120 },
         data: { modelId: "anthropic/claude-sonnet-4-6", name: "Claude Sonnet 4.6", tier: "balanced" },
       },
       {
         id: "model-haiku",
         type: "modelNode",
-        position: { x: 30, y: 160 },
+        position: { x: 30, y: 210 },
         data: { modelId: "anthropic/claude-haiku-3-5", name: "Claude Haiku 3.5", tier: "budget" },
       },
       {
-        id: "model-llama",
+        id: "model-gpt4o",
         type: "modelNode",
-        position: { x: 30, y: 260 },
-        data: { modelId: "ollama/llama3", name: "Ollama Llama 3", tier: "free" },
+        position: { x: 30, y: 310 },
+        data: { modelId: "openai/gpt-4o", name: "GPT-4o", tier: "premium" },
       },
+      {
+        id: "model-gemini-pro",
+        type: "modelNode",
+        position: { x: 30, y: 400 },
+        data: { modelId: "google/gemini-2.5-pro", name: "Gemini 2.5 Pro", tier: "balanced" },
+      },
+      {
+        id: "model-gemini-flash",
+        type: "modelNode",
+        position: { x: 30, y: 490 },
+        data: { modelId: "google/gemini-2.0-flash", name: "Gemini 2.0 Flash", tier: "budget" },
+      },
+      {
+        id: "model-deepseek",
+        type: "modelNode",
+        position: { x: 30, y: 580 },
+        data: { modelId: "deepseek/deepseek-chat-v3", name: "DeepSeek V3", tier: "balanced" },
+      },
+      {
+        id: "model-qwen",
+        type: "modelNode",
+        position: { x: 30, y: 670 },
+        data: { modelId: "ollama/qwen2.5-coder", name: "Qwen 2.5 Coder", tier: "free", source: "local" },
+      },
+      // ── File nodes (bottom right) ──
       {
         id: "file-soul",
         type: "fileNode",
-        position: { x: 380, y: 420 },
+        position: { x: 480, y: 850 },
         data: { filename: "SOUL.md", tokens: 1250, exists: true, shared: true },
       },
       {
         id: "file-user",
         type: "fileNode",
-        position: { x: 580, y: 420 },
+        position: { x: 680, y: 850 },
         data: { filename: "USER.md", tokens: 3800, exists: true, shared: true },
+      },
+      {
+        id: "file-memory",
+        type: "fileNode",
+        position: { x: 880, y: 850 },
+        data: { filename: "MEMORY.md", tokens: 820, exists: true, shared: true },
+      },
+      {
+        id: "file-identity",
+        type: "fileNode",
+        position: { x: 480, y: 920 },
+        data: { filename: "IDENTITY.md", tokens: 450, exists: true, shared: true },
+      },
+      {
+        id: "file-agents",
+        type: "fileNode",
+        position: { x: 680, y: 920 },
+        data: { filename: "AGENTS.md", tokens: 1680, exists: true, shared: true },
+      },
+      {
+        id: "file-tools",
+        type: "fileNode",
+        position: { x: 880, y: 920 },
+        data: { filename: "TOOLS.md", tokens: 2200, exists: true, shared: true },
+      },
+      {
+        id: "file-heartbeat",
+        type: "fileNode",
+        position: { x: 580, y: 990 },
+        data: { filename: "HEARTBEAT.md", tokens: 380, exists: true, shared: true },
+      },
+      {
+        id: "file-bootstrap",
+        type: "fileNode",
+        position: { x: 780, y: 990 },
+        data: { filename: "BOOTSTRAP.md", tokens: 560, exists: true, shared: true },
       },
     ],
     edges: [
-      { id: "e-sonnet-primary", source: "model-sonnet", target: "agent-default", targetHandle: "primary", animated: true },
-      { id: "e-haiku-fallback", source: "model-haiku", target: "agent-default", targetHandle: "fallback", animated: true },
-      { id: "e-llama-heartbeat", source: "model-llama", target: "agent-default", targetHandle: "heartbeat", animated: true },
+      // Coding Agent connections
+      { id: "e-sonnet-coding", source: "model-sonnet", target: "agent-coding", targetHandle: "primary", animated: true },
+      { id: "e-deepseek-coding", source: "model-deepseek", target: "agent-coding", targetHandle: "fallback", animated: true },
+      { id: "e-qwen-coding", source: "model-qwen", target: "agent-coding", targetHandle: "heartbeat", animated: true },
+      // Orchestrator connections
+      { id: "e-opus-orch", source: "model-opus", target: "agent-orchestrator", targetHandle: "primary", animated: true },
+      { id: "e-gpt4o-orch", source: "model-gpt4o", target: "agent-orchestrator", targetHandle: "fallback", animated: true },
+      { id: "e-flash-orch", source: "model-gemini-flash", target: "agent-orchestrator", targetHandle: "heartbeat", animated: true },
+      // Research Agent connections
+      { id: "e-gemini-research", source: "model-gemini-pro", target: "agent-research", targetHandle: "primary", animated: true },
+      { id: "e-haiku-research", source: "model-haiku", target: "agent-research", targetHandle: "fallback", animated: true },
     ],
   },
-  issues: [],
+  issues: [
+    {
+      id: "heavy-user-md",
+      severity: "high",
+      title: "USER.md is 3,800 tokens — exceeds recommended 2,000",
+      description: "Large bootstrap files consume context window on every request. Consider trimming USER.md or moving details to MEMORY.md.",
+      fix: { path: "USER.md", suggestion: "Split into USER.md (essentials) + MEMORY.md (details)" },
+    },
+    {
+      id: "tools-heavy",
+      severity: "medium",
+      title: "TOOLS.md is 2,200 tokens — consider trimming",
+      description: "TOOLS.md is loaded into every agent context. Remove unused tool descriptions to save tokens.",
+      fix: { path: "TOOLS.md", suggestion: "Remove descriptions for tools not actively used" },
+    },
+  ],
 };
 
 // ─── Main Canvas ──────────────────────────────────────────────────
@@ -653,9 +813,14 @@ function CanvasInner() {
   // ─── File viewer ──────────────────────────────────────────
 
   const DEMO_FILE_CONTENT: Record<string, string> = {
-    "SOUL.md": `# Agent Persona\n\nYou are a helpful AI assistant named Atlas.\nYou are friendly, concise, and professional.\n\n## Core Values\n- Be honest and transparent\n- Prioritize user safety\n- Admit when you don't know something`,
-    "USER.md": `# User Profile\n\nName: Demo User\nTimezone: UTC+8\n\n## Preferences\n- Prefers concise responses\n- Working on a SaaS product\n- Uses VS Code + Terminal\n- Primary stack: TypeScript, React, Node.js`,
-    "MEMORY.md": `# Session Memory\n\n## Recent Topics\n- Discussed API rate limiting\n- Reviewed database migration plan`,
+    "SOUL.md": `# Agent Persona\n\nYou are a helpful AI assistant named Atlas.\nYou are friendly, concise, and professional.\n\n## Core Values\n- Be honest and transparent\n- Prioritize user safety\n- Admit when you don't know something\n\n## Communication Style\n- Use bullet points for lists\n- Keep code examples concise\n- Ask clarifying questions before making assumptions`,
+    "USER.md": `# User Profile\n\nName: Demo User\nTimezone: UTC+8\nLanguage: English (prefers bilingual CN/EN)\n\n## Preferences\n- Prefers concise responses\n- Working on a SaaS product\n- Uses VS Code + Terminal\n- Primary stack: TypeScript, React, Node.js\n\n## Current Projects\n- Building a real-time dashboard\n- Migrating from REST to GraphQL\n- Setting up CI/CD pipeline\n\n## Pet Peeves\n- Overly verbose explanations\n- Unnecessary code comments\n- Suggesting deprecated packages`,
+    "MEMORY.md": `# Session Memory\n\n## Recent Topics\n- Discussed API rate limiting strategy\n- Reviewed database migration plan\n- Fixed CORS issue on production\n\n## Learned Preferences\n- Prefers pnpm over npm\n- Uses Tailwind CSS, not styled-components`,
+    "IDENTITY.md": `# Identity\n\nAgent Name: Atlas\nVersion: 0.4.2\nCreated: 2026-01-15\n\n## Capabilities\n- Code generation and review\n- Architecture planning\n- Debugging assistance\n- Documentation writing`,
+    "AGENTS.md": `# Multi-Agent Configuration\n\n## Coding Agent\nPrimary: Claude Sonnet 4.6 (best code quality)\nFallback: DeepSeek V3 (cost-effective alternative)\nHeartbeat: Qwen 2.5 Coder (local, free)\n\n## Orchestrator\nPrimary: Claude Opus 4.6 (complex reasoning)\nFallback: GPT-4o (alternative reasoning)\nHeartbeat: Gemini 2.0 Flash (fast status checks)\n\n## Research Agent\nPrimary: Gemini 2.5 Pro (large context window)\nFallback: Claude Haiku 3.5 (fast, cheap)`,
+    "TOOLS.md": `# Available Tools\n\n## File System\n- read_file: Read file contents\n- write_file: Write/create files\n- list_directory: List directory contents\n\n## Web\n- web_search: Search the internet\n- web_fetch: Fetch URL contents\n\n## Code\n- run_command: Execute shell commands\n- lint_code: Run linter on code\n\n## Deprecated (consider removing)\n- legacy_search: Old search API\n- parse_xml: Rarely used XML parser`,
+    "HEARTBEAT.md": `# Heartbeat Configuration\n\nInterval: 30s\nModel: Uses cheapest available (local preferred)\nPurpose: Keep session alive, check for updates\n\n## Health Checks\n- Memory usage < 80%\n- Response time < 5s\n- API key validity`,
+    "BOOTSTRAP.md": `# Bootstrap Sequence\n\n1. Load IDENTITY.md\n2. Load SOUL.md\n3. Load USER.md\n4. Load TOOLS.md\n5. Load AGENTS.md (if multi-agent)\n6. Load MEMORY.md (session context)\n7. Ready for user input`,
   };
 
   function handleViewFile(filename: string) {
