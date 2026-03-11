@@ -195,21 +195,6 @@ function AgentConfigNode({ data }: NodeProps<Node<AgentNodeData>>) {
         <span>{data.subtitle}</span>
       </div>
 
-      {/* Right-side output handle — connects to bootstrap files */}
-      <Handle
-        type="source"
-        position={Position.Right}
-        id="files"
-        style={{
-          width: 10,
-          height: 10,
-          background: "var(--text-tertiary)",
-          border: "2px solid var(--text-tertiary)",
-          right: -6,
-          top: "50%",
-          opacity: 0.5,
-        }}
-      />
     </div>
   );
 }
@@ -495,7 +480,7 @@ const DEMO_ANALYSIS: AnalysisResult = {
       {
         id: "agent-coding",
         type: "agentConfig",
-        position: { x: 480, y: 20 },
+        position: { x: 380, y: 20 },
         data: {
           label: "Coding Agent",
           subtitle: "agents/coding/agent.json",
@@ -509,7 +494,7 @@ const DEMO_ANALYSIS: AnalysisResult = {
       {
         id: "agent-orchestrator",
         type: "agentConfig",
-        position: { x: 480, y: 320 },
+        position: { x: 380, y: 320 },
         data: {
           label: "Orchestrator",
           subtitle: "agents/orchestrator/agent.json",
@@ -523,7 +508,7 @@ const DEMO_ANALYSIS: AnalysisResult = {
       {
         id: "agent-research",
         type: "agentConfig",
-        position: { x: 480, y: 600 },
+        position: { x: 380, y: 610 },
         data: {
           label: "Research Agent",
           subtitle: "agents/research/agent.json",
@@ -533,128 +518,71 @@ const DEMO_ANALYSIS: AnalysisResult = {
           ],
         },
       },
-      // ── Model nodes (left) ──
-      {
-        id: "model-opus",
-        type: "modelNode",
-        position: { x: 30, y: 30 },
-        data: { modelId: "anthropic/claude-opus-4-6", name: "Claude Opus 4.6", tier: "premium" },
-      },
+      // ── Model nodes (left, grouped by agent) ──
+      // → Coding Agent models
       {
         id: "model-sonnet",
         type: "modelNode",
-        position: { x: 30, y: 120 },
+        position: { x: 30, y: 40 },
         data: { modelId: "anthropic/claude-sonnet-4-6", name: "Claude Sonnet 4.6", tier: "balanced" },
-      },
-      {
-        id: "model-haiku",
-        type: "modelNode",
-        position: { x: 30, y: 210 },
-        data: { modelId: "anthropic/claude-haiku-3-5", name: "Claude Haiku 3.5", tier: "budget" },
-      },
-      {
-        id: "model-gpt4o",
-        type: "modelNode",
-        position: { x: 30, y: 310 },
-        data: { modelId: "openai/gpt-4o", name: "GPT-4o", tier: "premium" },
-      },
-      {
-        id: "model-gemini-pro",
-        type: "modelNode",
-        position: { x: 30, y: 400 },
-        data: { modelId: "google/gemini-2.5-pro", name: "Gemini 2.5 Pro", tier: "balanced" },
-      },
-      {
-        id: "model-gemini-flash",
-        type: "modelNode",
-        position: { x: 30, y: 490 },
-        data: { modelId: "google/gemini-2.0-flash", name: "Gemini 2.0 Flash", tier: "budget" },
       },
       {
         id: "model-deepseek",
         type: "modelNode",
-        position: { x: 30, y: 580 },
+        position: { x: 30, y: 120 },
         data: { modelId: "deepseek/deepseek-chat-v3", name: "DeepSeek V3", tier: "balanced" },
       },
       {
         id: "model-qwen",
         type: "modelNode",
-        position: { x: 30, y: 670 },
+        position: { x: 30, y: 200 },
         data: { modelId: "ollama/qwen2.5-coder", name: "Qwen 2.5 Coder", tier: "free", source: "local" },
       },
-      // ── File nodes (right column) ──
+      // → Orchestrator models
       {
-        id: "file-soul",
-        type: "fileNode",
-        position: { x: 960, y: 20 },
-        data: { filename: "SOUL.md", tokens: 1250, exists: true, shared: true },
+        id: "model-opus",
+        type: "modelNode",
+        position: { x: 30, y: 340 },
+        data: { modelId: "anthropic/claude-opus-4-6", name: "Claude Opus 4.6", tier: "premium" },
       },
       {
-        id: "file-identity",
-        type: "fileNode",
-        position: { x: 960, y: 90 },
-        data: { filename: "IDENTITY.md", tokens: 450, exists: true, shared: true },
+        id: "model-gpt4o",
+        type: "modelNode",
+        position: { x: 30, y: 420 },
+        data: { modelId: "openai/gpt-4o", name: "GPT-4o", tier: "premium" },
       },
       {
-        id: "file-user",
-        type: "fileNode",
-        position: { x: 960, y: 160 },
-        data: { filename: "USER.md", tokens: 3800, exists: true, shared: true },
+        id: "model-gemini-flash",
+        type: "modelNode",
+        position: { x: 30, y: 500 },
+        data: { modelId: "google/gemini-2.0-flash", name: "Gemini 2.0 Flash", tier: "budget" },
+      },
+      // → Research Agent models
+      {
+        id: "model-gemini-pro",
+        type: "modelNode",
+        position: { x: 30, y: 640 },
+        data: { modelId: "google/gemini-2.5-pro", name: "Gemini 2.5 Pro", tier: "balanced" },
       },
       {
-        id: "file-memory",
-        type: "fileNode",
-        position: { x: 960, y: 230 },
-        data: { filename: "MEMORY.md", tokens: 820, exists: true, shared: true },
-      },
-      {
-        id: "file-agents",
-        type: "fileNode",
-        position: { x: 960, y: 310 },
-        data: { filename: "AGENTS.md", tokens: 1680, exists: true, shared: true },
-      },
-      {
-        id: "file-tools",
-        type: "fileNode",
-        position: { x: 960, y: 380 },
-        data: { filename: "TOOLS.md", tokens: 2200, exists: true, shared: true },
-      },
-      {
-        id: "file-heartbeat",
-        type: "fileNode",
-        position: { x: 960, y: 460 },
-        data: { filename: "HEARTBEAT.md", tokens: 380, exists: true, shared: true },
-      },
-      {
-        id: "file-bootstrap",
-        type: "fileNode",
-        position: { x: 960, y: 530 },
-        data: { filename: "BOOTSTRAP.md", tokens: 560, exists: true, shared: true },
+        id: "model-haiku",
+        type: "modelNode",
+        position: { x: 30, y: 720 },
+        data: { modelId: "anthropic/claude-haiku-3-5", name: "Claude Haiku 3.5", tier: "budget" },
       },
     ],
     edges: [
-      // Coding Agent connections
+      // Coding Agent ← Models
       { id: "e-sonnet-coding", source: "model-sonnet", target: "agent-coding", targetHandle: "primary", animated: true },
       { id: "e-deepseek-coding", source: "model-deepseek", target: "agent-coding", targetHandle: "fallback", animated: true },
       { id: "e-qwen-coding", source: "model-qwen", target: "agent-coding", targetHandle: "heartbeat", animated: true },
-      // Orchestrator connections
+      // Orchestrator ← Models
       { id: "e-opus-orch", source: "model-opus", target: "agent-orchestrator", targetHandle: "primary", animated: true },
       { id: "e-gpt4o-orch", source: "model-gpt4o", target: "agent-orchestrator", targetHandle: "fallback", animated: true },
       { id: "e-flash-orch", source: "model-gemini-flash", target: "agent-orchestrator", targetHandle: "heartbeat", animated: true },
-      // Research Agent connections
+      // Research Agent ← Models
       { id: "e-gemini-research", source: "model-gemini-pro", target: "agent-research", targetHandle: "primary", animated: true },
       { id: "e-haiku-research", source: "model-haiku", target: "agent-research", targetHandle: "fallback", animated: true },
-      // Agent → File connections (shared bootstrap context)
-      { id: "f-coding-soul", source: "agent-coding", sourceHandle: "files", target: "file-soul", animated: false },
-      { id: "f-coding-identity", source: "agent-coding", sourceHandle: "files", target: "file-identity", animated: false },
-      { id: "f-coding-user", source: "agent-coding", sourceHandle: "files", target: "file-user", animated: false },
-      { id: "f-coding-tools", source: "agent-coding", sourceHandle: "files", target: "file-tools", animated: false },
-      { id: "f-orch-soul", source: "agent-orchestrator", sourceHandle: "files", target: "file-soul", animated: false },
-      { id: "f-orch-agents", source: "agent-orchestrator", sourceHandle: "files", target: "file-agents", animated: false },
-      { id: "f-orch-memory", source: "agent-orchestrator", sourceHandle: "files", target: "file-memory", animated: false },
-      { id: "f-research-soul", source: "agent-research", sourceHandle: "files", target: "file-soul", animated: false },
-      { id: "f-research-user", source: "agent-research", sourceHandle: "files", target: "file-user", animated: false },
-      { id: "f-research-memory", source: "agent-research", sourceHandle: "files", target: "file-memory", animated: false },
     ],
   },
   issues: [
@@ -729,22 +657,6 @@ function CanvasInner() {
     }));
 
     const builtEdges: Edge[] = analysisData.topology.edges.map((e) => {
-      // Agent → File edges: dashed, subtle style
-      const isFileEdge = e.id.startsWith("f-") || e.target.startsWith("file-");
-      if (isFileEdge) {
-        return {
-          ...e,
-          animated: false,
-          style: { stroke: "#5c607866", strokeWidth: 1.5, strokeDasharray: "6 3" },
-          markerEnd: {
-            type: MarkerType.ArrowClosed,
-            color: "#5c607866",
-            width: 12,
-            height: 12,
-          },
-        };
-      }
-      // Model → Agent edges: solid, colorful
       const sourceNode = analysisData.topology.nodes.find((n) => n.id === e.source);
       const modelId = String(sourceNode?.data?.modelId || e.source);
       const tierColor = TIER_COLORS[guessTier(modelId)] || TIER_COLORS.default;
