@@ -66,6 +66,8 @@ const SLOT_ICONS: Record<string, React.ComponentType<{ size?: number; style?: Re
   primary: Zap,
   fallback: Shield,
   heartbeat: Brain,
+  compaction: Settings2,
+  imageModel: Eye,
 };
 
 // ─── Custom Nodes (dynamic, data-driven) ──────────────────────────
@@ -417,7 +419,7 @@ const DEMO_ANALYSIS: AnalysisResult = {
       configSource: "openclaw.json",
       hasOwnSoul: false,
       slots: [
-        { id: "primary", label: "Primary Model", currentValue: "anthropic/claude-sonnet-4-6" },
+        { id: "primary", label: "Primary", currentValue: "anthropic/claude-sonnet-4-6" },
         { id: "fallback", label: "Fallback", currentValue: "deepseek/deepseek-chat-v3" },
         { id: "heartbeat", label: "Heartbeat", currentValue: "google/gemini-2.0-flash" },
       ],
@@ -462,9 +464,9 @@ const DEMO_ANALYSIS: AnalysisResult = {
           label: "My Agent",
           subtitle: "openclaw.json",
           slots: [
-            { id: "primary", label: "Primary — your main AI model", currentValue: "anthropic/claude-sonnet-4-6" },
-            { id: "fallback", label: "Fallback — used when primary is down", currentValue: "deepseek/deepseek-chat-v3" },
-            { id: "heartbeat", label: "Heartbeat — cheap model for status checks", currentValue: "google/gemini-2.0-flash" },
+            { id: "primary", label: "Primary — handles all conversations", currentValue: "anthropic/claude-sonnet-4-6" },
+            { id: "fallback", label: "Fallback — auto-switches when primary fails", currentValue: "deepseek/deepseek-chat-v3" },
+            { id: "heartbeat", label: "Heartbeat — periodic background check (every 30min)", currentValue: "google/gemini-2.0-flash" },
           ],
         },
       },
