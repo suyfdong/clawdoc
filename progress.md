@@ -96,3 +96,51 @@
 3. 迁移 diagnose/wizard 页面到新 API
 4. Connect 页面加 Brain Status 显示
 5. 推送到 GitHub + Vercel 部署
+
+---
+
+## 2026-03-11（下午 — Bug 修复 + UI 迭代）
+
+### 改了哪些文件
+
+1. **`agent/index.js`**
+   - 新增 `extractBalancedJSON()` — 替换 greedy regex，修复 JSON 解析
+   - 新增 `POST /api/brain/configure` — Web UI 远程配置 API key（无需 SSH）
+   - `/api/apply-changes` 增加 `realpath()` symlink 安全检查
+
+2. **`agent/llm.js`**
+   - 修复 `runAgentLoop` 最终 assistant 消息未追加的 bug
+
+3. **`web/src/app/canvas/page.tsx`**（改动最多）
+   - 修复 `onConnect` stale closure（useRef 模式）
+   - 修复 `guessTier` 运算符优先级
+   - Demo 数据迭代：3 agent → 1 agent（"My Agent"），16 个可用模型
+   - 去掉 File 节点（减少画布混乱）
+   - 槽位加描述：Primary/Fallback/Heartbeat 含义说明
+   - Heartbeat 槽位加 AlertTriangle 警告（已知 bug，model override 不生效）
+
+4. **`web/src/app/connect/page.tsx`**
+   - 新增 "AI BRAIN" 区块：显示 Brain 状态 + API key 输入表单
+   - 链接 openrouter.ai/keys 方便用户获取 key
+
+5. **`web/src/lib/store.ts`**
+   - 边类型增加 `sourceHandle`
+   - 新增 `configureBrain` action
+
+6. **`web/src/components/Sidebar.tsx`**
+   - Logo 改为 `<Link href="/">`，可点击返回首页
+
+7. **`web/src/components/DiffPreview.tsx`**
+   - 修复冗余 string split
+
+### 当前状态
+- main 分支 commit `03d2123`，已推送 GitHub，Vercel 部署成功
+- 本机 `~/.clawdoc/brain.json` 已创建（OpenRouter key）
+- 画布 Demo：1 个 Agent + 3 个已连接模型 + 16 个侧边栏可用模型
+- Heartbeat 槽位有视觉警告标记
+
+### 下一步
+1. 腾讯云部署 Companion Agent + 真实 OpenClaw 测试
+2. 迁移 diagnose/wizard/templates 页面到 LLM API
+3. 画布交互优化（拖拽模型到槽位等）
+4. 用户反馈 Heartbeat 显示是否满意（待确认）
