@@ -128,6 +128,7 @@ function AgentConfigNode({ data }: NodeProps<Node<AgentNodeData>>) {
           const assigned = slot.currentValue;
           const tier = assigned ? guessTier(assigned) : null;
           const tierColor = tier ? TIER_COLORS[tier] : null;
+          const hasWarning = slot.label.includes("may not work");
 
           return (
             <div key={slot.id} className="relative">
@@ -148,20 +149,26 @@ function AgentConfigNode({ data }: NodeProps<Node<AgentNodeData>>) {
               <div
                 className="rounded-lg px-4 py-3 flex items-center gap-3 transition-all"
                 style={{
-                  background: assigned ? `${tierColor?.bg || "var(--accent-amber-dim)"}` : "var(--bg-deep)",
-                  border: `1px solid ${assigned ? `${tierColor?.edge || "var(--accent-amber)"}33` : "var(--border-subtle)"}`,
+                  background: hasWarning
+                    ? "rgba(245,158,66,0.06)"
+                    : assigned ? `${tierColor?.bg || "var(--accent-amber-dim)"}` : "var(--bg-deep)",
+                  border: `1px solid ${hasWarning ? "rgba(245,158,66,0.25)" : assigned ? `${tierColor?.edge || "var(--accent-amber)"}33` : "var(--border-subtle)"}`,
                 }}
               >
-                <Icon size={16} style={{ color: assigned ? (tierColor?.text || "var(--accent-amber)") : "var(--text-tertiary)" }} />
+                {hasWarning ? (
+                  <AlertTriangle size={16} style={{ color: "var(--accent-amber)", opacity: 0.7 }} />
+                ) : (
+                  <Icon size={16} style={{ color: assigned ? (tierColor?.text || "var(--accent-amber)") : "var(--text-tertiary)" }} />
+                )}
                 <div className="flex-1 min-w-0">
                   <p
                     className="text-[11px]"
-                    style={{ fontFamily: "var(--font-display)", color: "var(--text-tertiary)" }}
+                    style={{ fontFamily: "var(--font-display)", color: hasWarning ? "var(--accent-amber)" : "var(--text-tertiary)" }}
                   >
                     {slot.label}
                   </p>
                   {assigned ? (
-                    <p className="text-sm font-medium truncate" style={{ color: tierColor?.text }}>
+                    <p className="text-sm font-medium truncate" style={{ color: hasWarning ? "var(--text-tertiary)" : tierColor?.text, opacity: hasWarning ? 0.6 : 1 }}>
                       {assigned}
                     </p>
                   ) : (
