@@ -466,7 +466,7 @@ const DEMO_ANALYSIS: AnalysisResult = {
           slots: [
             { id: "primary", label: "Primary — handles all conversations", currentValue: "anthropic/claude-sonnet-4-6" },
             { id: "fallback", label: "Fallback — auto-switches when primary fails", currentValue: "deepseek/deepseek-chat-v3" },
-            { id: "heartbeat", label: "Heartbeat — periodic background check (every 30min)", currentValue: "google/gemini-2.0-flash" },
+            { id: "heartbeat", label: "Heartbeat — periodic check (model override may not work)", currentValue: "google/gemini-2.0-flash" },
           ],
         },
       },
@@ -497,6 +497,13 @@ const DEMO_ANALYSIS: AnalysisResult = {
     ],
   },
   issues: [
+    {
+      id: "heartbeat-model-bug",
+      severity: "high",
+      title: "Heartbeat model override is broken in most versions",
+      description: "heartbeat.model config is silently ignored — heartbeat runs on your primary model, costing 170k-210k tokens per check. Consider disabling heartbeat (set every: \"0m\") or using an external cron job instead.",
+      fix: { path: "openclaw.json", suggestion: "Set heartbeat.every to \"0m\" to disable, or remove heartbeat.model" },
+    },
     {
       id: "heavy-user-md",
       severity: "high",
