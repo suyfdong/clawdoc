@@ -153,10 +153,10 @@ function AgentConfigNode({ data }: NodeProps<Node<AgentNodeData>>) {
                 <Icon size={16} style={{ color: assigned ? (tierColor?.text || "var(--accent-amber)") : "var(--text-tertiary)" }} />
                 <div className="flex-1 min-w-0">
                   <p
-                    className="text-[11px] tracking-wider"
+                    className="text-[11px]"
                     style={{ fontFamily: "var(--font-display)", color: "var(--text-tertiary)" }}
                   >
-                    {slot.label.toUpperCase()}
+                    {slot.label}
                   </p>
                   {assigned ? (
                     <p className="text-sm font-medium truncate" style={{ color: tierColor?.text }}>
@@ -408,67 +408,44 @@ const nodeTypes = {
 
 const DEMO_ANALYSIS: AnalysisResult = {
   version: "0.4.2",
-  summary: "3 agents configured · 8 models in use · 2 issues found — connect to see your real config",
+  summary: "Demo — drag models to change assignments, use dropdown for quick swap",
   agents: [
     {
-      id: "coding",
-      name: "Coding Agent",
-      model: { primary: "anthropic/claude-sonnet-4-6", fallbacks: ["deepseek/deepseek-chat-v3"], heartbeat: "ollama/qwen2.5-coder" },
-      configSource: "agents/coding/agent.json",
-      hasOwnSoul: true,
+      id: "default",
+      name: "My Agent",
+      model: { primary: "anthropic/claude-sonnet-4-6", fallbacks: ["deepseek/deepseek-chat-v3"], heartbeat: "google/gemini-2.0-flash" },
+      configSource: "openclaw.json",
+      hasOwnSoul: false,
       slots: [
         { id: "primary", label: "Primary Model", currentValue: "anthropic/claude-sonnet-4-6" },
         { id: "fallback", label: "Fallback", currentValue: "deepseek/deepseek-chat-v3" },
-        { id: "heartbeat", label: "Heartbeat", currentValue: "ollama/qwen2.5-coder" },
-      ],
-    },
-    {
-      id: "orchestrator",
-      name: "Orchestrator",
-      model: { primary: "anthropic/claude-opus-4-6", fallbacks: ["openai/gpt-4o"], heartbeat: "google/gemini-2.0-flash" },
-      configSource: "agents/orchestrator/agent.json",
-      hasOwnSoul: false,
-      slots: [
-        { id: "primary", label: "Primary Model", currentValue: "anthropic/claude-opus-4-6" },
-        { id: "fallback", label: "Fallback", currentValue: "openai/gpt-4o" },
         { id: "heartbeat", label: "Heartbeat", currentValue: "google/gemini-2.0-flash" },
-      ],
-    },
-    {
-      id: "research",
-      name: "Research Agent",
-      model: { primary: "google/gemini-2.5-pro", fallbacks: ["anthropic/claude-haiku-3-5"], heartbeat: null },
-      configSource: "agents/research/agent.json",
-      hasOwnSoul: false,
-      slots: [
-        { id: "primary", label: "Primary Model", currentValue: "google/gemini-2.5-pro" },
-        { id: "fallback", label: "Fallback", currentValue: "anthropic/claude-haiku-3-5" },
       ],
     },
   ],
   availableModels: [
-    { id: "anthropic/claude-opus-4-6", name: "Claude Opus 4.6", source: "orchestrator", recommended: true },
-    { id: "anthropic/claude-sonnet-4-6", name: "Claude Sonnet 4.6", source: "coding", recommended: true },
-    { id: "anthropic/claude-haiku-3-5", name: "Claude Haiku 3.5", source: "research fallback", recommended: false },
-    { id: "openai/gpt-4o", name: "GPT-4o", source: "orchestrator fallback", recommended: false },
-    { id: "openai/gpt-4o-mini", name: "GPT-4o Mini", source: "available", recommended: false },
-    { id: "google/gemini-2.5-pro", name: "Gemini 2.5 Pro", source: "research", recommended: true },
-    { id: "google/gemini-2.0-flash", name: "Gemini 2.0 Flash", source: "orchestrator heartbeat", recommended: false },
-    { id: "deepseek/deepseek-chat-v3", name: "DeepSeek V3", source: "coding fallback", recommended: true },
-    { id: "deepseek/deepseek-reasoner", name: "DeepSeek R1", source: "available", recommended: false },
-    { id: "x-ai/grok-3", name: "Grok 3", source: "available", recommended: false },
-    { id: "x-ai/grok-3-mini", name: "Grok 3 Mini", source: "available", recommended: false },
-    { id: "meta-llama/llama-3.1-405b", name: "Llama 3.1 405B", source: "available", recommended: false },
-    { id: "ollama/qwen2.5-coder", name: "Qwen 2.5 Coder", source: "coding heartbeat (local)", recommended: false },
-    { id: "ollama/llama3", name: "Llama 3 (local)", source: "available (local)", recommended: false },
-    { id: "mistralai/mistral-large", name: "Mistral Large", source: "available", recommended: false },
-    { id: "cohere/command-r-plus", name: "Command R+", source: "available", recommended: false },
+    { id: "anthropic/claude-opus-4-6", name: "Claude Opus 4.6", source: "Anthropic", recommended: true },
+    { id: "anthropic/claude-sonnet-4-6", name: "Claude Sonnet 4.6", source: "Anthropic", recommended: true },
+    { id: "anthropic/claude-haiku-3-5", name: "Claude Haiku 3.5", source: "Anthropic", recommended: false },
+    { id: "openai/gpt-4o", name: "GPT-4o", source: "OpenAI", recommended: false },
+    { id: "openai/gpt-4o-mini", name: "GPT-4o Mini", source: "OpenAI", recommended: false },
+    { id: "google/gemini-2.5-pro", name: "Gemini 2.5 Pro", source: "Google", recommended: true },
+    { id: "google/gemini-2.0-flash", name: "Gemini 2.0 Flash", source: "Google", recommended: false },
+    { id: "deepseek/deepseek-chat-v3", name: "DeepSeek V3", source: "DeepSeek", recommended: true },
+    { id: "deepseek/deepseek-reasoner", name: "DeepSeek R1", source: "DeepSeek", recommended: false },
+    { id: "x-ai/grok-3", name: "Grok 3", source: "xAI", recommended: false },
+    { id: "x-ai/grok-3-mini", name: "Grok 3 Mini", source: "xAI", recommended: false },
+    { id: "meta-llama/llama-3.1-405b", name: "Llama 3.1 405B", source: "Meta", recommended: false },
+    { id: "ollama/qwen2.5-coder", name: "Qwen 2.5 Coder", source: "Local (Ollama)", recommended: false },
+    { id: "ollama/llama3", name: "Llama 3", source: "Local (Ollama)", recommended: false },
+    { id: "mistralai/mistral-large", name: "Mistral Large", source: "Mistral", recommended: false },
+    { id: "cohere/command-r-plus", name: "Command R+", source: "Cohere", recommended: false },
   ],
   sharedFiles: {
     "SOUL.md": { tokens: 1250, shared: true, path: "SOUL.md" },
+    "IDENTITY.md": { tokens: 450, shared: true, path: "IDENTITY.md" },
     "USER.md": { tokens: 3800, shared: true, path: "USER.md" },
     "MEMORY.md": { tokens: 820, shared: true, path: "MEMORY.md" },
-    "IDENTITY.md": { tokens: 450, shared: true, path: "IDENTITY.md" },
     "AGENTS.md": { tokens: 1680, shared: true, path: "AGENTS.md" },
     "TOOLS.md": { tokens: 2200, shared: true, path: "TOOLS.md" },
     "HEARTBEAT.md": { tokens: 380, shared: true, path: "HEARTBEAT.md" },
@@ -476,113 +453,45 @@ const DEMO_ANALYSIS: AnalysisResult = {
   },
   topology: {
     nodes: [
-      // ── Agent nodes (center) ──
+      // ── Your Agent (center-right) ──
       {
-        id: "agent-coding",
+        id: "agent-default",
         type: "agentConfig",
-        position: { x: 380, y: 20 },
+        position: { x: 420, y: 50 },
         data: {
-          label: "Coding Agent",
-          subtitle: "agents/coding/agent.json",
+          label: "My Agent",
+          subtitle: "openclaw.json",
           slots: [
-            { id: "primary", label: "Primary Model", currentValue: "anthropic/claude-sonnet-4-6" },
-            { id: "fallback", label: "Fallback", currentValue: "deepseek/deepseek-chat-v3" },
-            { id: "heartbeat", label: "Heartbeat", currentValue: "ollama/qwen2.5-coder" },
+            { id: "primary", label: "Primary — your main AI model", currentValue: "anthropic/claude-sonnet-4-6" },
+            { id: "fallback", label: "Fallback — used when primary is down", currentValue: "deepseek/deepseek-chat-v3" },
+            { id: "heartbeat", label: "Heartbeat — cheap model for status checks", currentValue: "google/gemini-2.0-flash" },
           ],
         },
       },
-      {
-        id: "agent-orchestrator",
-        type: "agentConfig",
-        position: { x: 380, y: 320 },
-        data: {
-          label: "Orchestrator",
-          subtitle: "agents/orchestrator/agent.json",
-          slots: [
-            { id: "primary", label: "Primary Model", currentValue: "anthropic/claude-opus-4-6" },
-            { id: "fallback", label: "Fallback", currentValue: "openai/gpt-4o" },
-            { id: "heartbeat", label: "Heartbeat", currentValue: "google/gemini-2.0-flash" },
-          ],
-        },
-      },
-      {
-        id: "agent-research",
-        type: "agentConfig",
-        position: { x: 380, y: 610 },
-        data: {
-          label: "Research Agent",
-          subtitle: "agents/research/agent.json",
-          slots: [
-            { id: "primary", label: "Primary Model", currentValue: "google/gemini-2.5-pro" },
-            { id: "fallback", label: "Fallback", currentValue: "anthropic/claude-haiku-3-5" },
-          ],
-        },
-      },
-      // ── Model nodes (left, grouped by agent) ──
-      // → Coding Agent models
+      // ── Models (left) ──
       {
         id: "model-sonnet",
         type: "modelNode",
-        position: { x: 30, y: 40 },
-        data: { modelId: "anthropic/claude-sonnet-4-6", name: "Claude Sonnet 4.6", tier: "balanced" },
+        position: { x: 30, y: 60 },
+        data: { modelId: "anthropic/claude-sonnet-4-6", name: "Claude Sonnet 4.6", tier: "balanced", source: "Anthropic" },
       },
       {
         id: "model-deepseek",
         type: "modelNode",
-        position: { x: 30, y: 120 },
-        data: { modelId: "deepseek/deepseek-chat-v3", name: "DeepSeek V3", tier: "balanced" },
+        position: { x: 30, y: 155 },
+        data: { modelId: "deepseek/deepseek-chat-v3", name: "DeepSeek V3", tier: "balanced", source: "DeepSeek" },
       },
       {
-        id: "model-qwen",
+        id: "model-flash",
         type: "modelNode",
-        position: { x: 30, y: 200 },
-        data: { modelId: "ollama/qwen2.5-coder", name: "Qwen 2.5 Coder", tier: "free", source: "local" },
-      },
-      // → Orchestrator models
-      {
-        id: "model-opus",
-        type: "modelNode",
-        position: { x: 30, y: 340 },
-        data: { modelId: "anthropic/claude-opus-4-6", name: "Claude Opus 4.6", tier: "premium" },
-      },
-      {
-        id: "model-gpt4o",
-        type: "modelNode",
-        position: { x: 30, y: 420 },
-        data: { modelId: "openai/gpt-4o", name: "GPT-4o", tier: "premium" },
-      },
-      {
-        id: "model-gemini-flash",
-        type: "modelNode",
-        position: { x: 30, y: 500 },
-        data: { modelId: "google/gemini-2.0-flash", name: "Gemini 2.0 Flash", tier: "budget" },
-      },
-      // → Research Agent models
-      {
-        id: "model-gemini-pro",
-        type: "modelNode",
-        position: { x: 30, y: 640 },
-        data: { modelId: "google/gemini-2.5-pro", name: "Gemini 2.5 Pro", tier: "balanced" },
-      },
-      {
-        id: "model-haiku",
-        type: "modelNode",
-        position: { x: 30, y: 720 },
-        data: { modelId: "anthropic/claude-haiku-3-5", name: "Claude Haiku 3.5", tier: "budget" },
+        position: { x: 30, y: 250 },
+        data: { modelId: "google/gemini-2.0-flash", name: "Gemini 2.0 Flash", tier: "budget", source: "Google" },
       },
     ],
     edges: [
-      // Coding Agent ← Models
-      { id: "e-sonnet-coding", source: "model-sonnet", target: "agent-coding", targetHandle: "primary", animated: true },
-      { id: "e-deepseek-coding", source: "model-deepseek", target: "agent-coding", targetHandle: "fallback", animated: true },
-      { id: "e-qwen-coding", source: "model-qwen", target: "agent-coding", targetHandle: "heartbeat", animated: true },
-      // Orchestrator ← Models
-      { id: "e-opus-orch", source: "model-opus", target: "agent-orchestrator", targetHandle: "primary", animated: true },
-      { id: "e-gpt4o-orch", source: "model-gpt4o", target: "agent-orchestrator", targetHandle: "fallback", animated: true },
-      { id: "e-flash-orch", source: "model-gemini-flash", target: "agent-orchestrator", targetHandle: "heartbeat", animated: true },
-      // Research Agent ← Models
-      { id: "e-gemini-research", source: "model-gemini-pro", target: "agent-research", targetHandle: "primary", animated: true },
-      { id: "e-haiku-research", source: "model-haiku", target: "agent-research", targetHandle: "fallback", animated: true },
+      { id: "e-sonnet-primary", source: "model-sonnet", target: "agent-default", targetHandle: "primary", animated: true },
+      { id: "e-deepseek-fallback", source: "model-deepseek", target: "agent-default", targetHandle: "fallback", animated: true },
+      { id: "e-flash-heartbeat", source: "model-flash", target: "agent-default", targetHandle: "heartbeat", animated: true },
     ],
   },
   issues: [
@@ -922,7 +831,7 @@ function CanvasInner() {
                   className="text-[10px] font-semibold tracking-widest mb-2 px-1"
                   style={{ fontFamily: "var(--font-display)", color: "var(--text-tertiary)" }}
                 >
-                  MODELS IN USE
+                  AVAILABLE MODELS
                 </h2>
                 <div className="space-y-1">
                   {effectiveAnalysis.availableModels.map((m) => (
