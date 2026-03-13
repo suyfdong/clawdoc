@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useAppStore } from "@/lib/store";
 import {
   Plug,
+  Activity,
   LayoutDashboard,
   GitFork,
   Wand2,
@@ -14,10 +15,11 @@ import {
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 const NAV_ITEMS = [
   { href: "/connect", label: "Connect", icon: Plug, requiresConnection: false },
+  { href: "/dashboard", label: "Dashboard", icon: Activity, requiresConnection: false },
   {
     href: "/canvas",
     label: "Visual Config",
@@ -56,11 +58,29 @@ const NAV_ITEMS = [
   },
 ];
 
+function relativeTime(ts: number): string {
+  if (!ts) return "Unknown";
+  const diff = Math.floor((Date.now() - ts) / 1000);
+  if (diff < 10) return "Just now";
+  if (diff < 60) return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  return `${Math.floor(diff / 3600)}h ago`;
+}
+
 export default function Sidebar() {
   const pathname = usePathname();
   const connectionStatus = useAppStore((s) => s.connectionStatus);
   const serverInfo = useAppStore((s) => s.serverInfo);
+  const agentPulse = useAppStore((s) => s.agentPulse);
+  const serverStatus = useAppStore((s) => s.serverStatus);
   const [collapsed, setCollapsed] = useState(false);
+  const [, setTick] = useState(0);
+
+  useEffect(() => {
+    if (!agentPulse) return;
+    const id = setInterval(() => setTick((t) => t + 1), 5000);
+    return () => clearInterval(id);
+  }, [agentPulse]);
 
   const isConnected = connectionStatus === "connected";
 
@@ -124,13 +144,24 @@ export default function Sidebar() {
             </span>
           </div>
           {isConnected && serverInfo && (
-            <p
-              className="text-[10px] mt-1 truncate"
-              style={{ color: "var(--text-tertiary)" }}
-            >
-              {serverInfo.agents.length} agent
-              {serverInfo.agents.length !== 1 ? "s" : ""}
-            </p>
+            <div className="mt-1 space-y-0.5">
+              <p className="text-[10px] truncate" style={{ color: "var(--text-tertiary)" }}>
+                {serverInfo.agents.length} agent{serverInfo.agents.length !== 1 ? "s" : ""}
+                {serverStatus ? ` \u00B7 ${serverStatus.activeSessions} session${serverStatus.activeSessions !== 1 ? "s" : ""}` : ""}
+              </p>
+              {agentPulse > 0 && (
+                <p className="text-[10px] truncate" style={{
+                  color: (Date.now() - agentPulse) < 30000 ? "var(--accent-green)" : "var(--accent-amber)",
+                }}>
+                  {(Date.now() - agentPulse) < 30000 ? "Active" : "Idle"} {relativeTime(agentPulse)}
+                </p>
+              )}
+              {serverStatus && !serverStatus.openclawProcess.running && (
+                <p className="text-[10px] font-semibold" style={{ color: "var(--accent-red)" }}>
+                  OFFLINE
+                </p>
+              )}
+            </div>
           )}
         </div>
       )}

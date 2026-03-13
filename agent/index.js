@@ -26,7 +26,7 @@ import { join, resolve, relative } from "path";
 import { homedir } from "os";
 import { randomBytes, createHash } from "crypto";
 import { execSync, exec } from "child_process";
-import { loadBrainConfig, getBrainStatus, resetBrainConfig, runAgentLoop, callLLM } from "./llm.js";
+import { loadBrainConfig, getBrainStatus, resetBrainConfig, runAgentLoop } from "./llm.js";
 import { createTools } from "./tools.js";
 import { getAnalyzePrompt, getChatPrompt, getQuickOpPrompt } from "./prompts.js";
 
@@ -223,6 +223,9 @@ async function listAgents(openclawDir) {
 // ---------------------------------------------------------------------------
 
 async function main() {
+  const agentStartTime = Date.now();
+  let fileChangeCount = 0;
+
   const args = parseArgs();
   const openclawDir = await detectOpenClawDir(args.openclawDir);
   const version = await detectOpenClawVersion(openclawDir);
@@ -410,6 +413,92 @@ async function main() {
   app.get("/api/brain/status", async (req, res) => {
     const status = await getBrainStatus();
     res.json(status);
+  });
+
+  // ---- OpenClaw status endpoint ----
+
+  app.get("/api/status", requireAuth, async (req, res) => {
+    // 1. Process detection
+    let openclawProcess = { running: false, pid: null, memoryMB: null };
+    try {
+      const pgrepOutput = execSync("pgrep -f openclaw 2>/dev/null || true", {
+        encoding: "utf-8",
+        timeout: 5000,
+      }).trim();
+      if (pgrepOutput) {
+        const pid = parseInt(pgrepOutput.split("\n")[0], 10);
+        if (!isNaN(pid)) {
+          openclawProcess.running = true;
+          openclawProcess.pid = pid;
+          // Try to get memory usage (works on macOS and Linux)
+          try {
+            const rssKB = execSync(`ps -o rss= -p ${pid} 2>/dev/null || true`, {
+              encoding: "utf-8",
+              timeout: 5000,
+            }).trim();
+            if (rssKB) {
+              openclawProcess.memoryMB = Math.round(parseInt(rssKB, 10) / 1024);
+            }
+          } catch {
+            // Memory detection failed, leave as null
+          }
+        }
+      }
+    } catch {
+      // Process detection failed, leave defaults
+    }
+
+    // 2. Active sessions (directories modified in the last hour)
+    let activeSessions = 0;
+    try {
+      const agentsDir = join(openclawDir, "agents");
+      const agentEntries = await listDir(agentsDir);
+      const oneHourAgo = Date.now() - 60 * 60 * 1000;
+      for (const entry of agentEntries) {
+        if (entry.type !== "directory") continue;
+        const sessionsDir = join(agentsDir, entry.name, "sessions");
+        const sessionEntries = await listDir(sessionsDir);
+        for (const sess of sessionEntries) {
+          if (sess.type !== "directory") continue;
+          try {
+            const s = await stat(join(sessionsDir, sess.name));
+            if (s.mtime.getTime() > oneHourAgo) {
+              activeSessions++;
+            }
+          } catch {
+            // Skip inaccessible sessions
+          }
+        }
+      }
+    } catch {
+      // Session counting failed
+    }
+
+    // 3. Last config change
+    let lastConfigChange = null;
+    try {
+      const s = await stat(join(openclawDir, "openclaw.json"));
+      lastConfigChange = s.mtime.toISOString();
+    } catch {
+      // Config file not found
+    }
+
+    // 4. Agent uptime
+    const uptimeMs = Date.now() - agentStartTime;
+    const uptimeH = Math.floor(uptimeMs / 3600000);
+    const uptimeM = Math.floor((uptimeMs % 3600000) / 60000);
+    const agentUptime = `${uptimeH}h ${uptimeM}m`;
+
+    // 5. Recent file changes
+    const recentFileChanges = fileChangeCount;
+
+    res.json({
+      openclawProcess,
+      activeSessions,
+      lastConfigChange,
+      agentUptime,
+      recentFileChanges,
+    });
   });
 
   // Configure brain — save API key from Web UI (no SSH needed)
@@ -758,6 +847,7 @@ Read the relevant config files and generate the exact changes needed.`;
   });
 
   watcher.on("all", (event, path) => {
+    fileChangeCount++;
     const message = JSON.stringify({ event, path, timestamp: Date.now() });
     for (const client of connectedClients) {
       if (client.readyState === 1) {

@@ -235,11 +235,12 @@ LLM 在分析时可能漏掉这些重要文件的内容。
 | 12 | P3 | ✅ 已修复 | search_config 现在也搜索 .md 文件 |
 | 14 | P3 | ✅ 已修复 | 所有 Sidebar 项均可浏览（requiresConnection: false），操作时各页面自行检查连接 |
 
+| 9 | P3 | ✅ 已修复 | 删除 callLLM dead code，index.js import 清理 |
+| 13 | P3 | ✅ 已修复 | Diagnose 评分按 severity 加权（critical -25, high -15, medium -8, low -3） |
+
 ### 待做
 
 | # | 优先级 | 说明 |
 |---|--------|------|
 | 4 | P1 | Canvas 真实模式验证（需腾讯云部署后测试） |
-| 8 | P2 | 回滚 API（POST /api/rollback + UI Undo 按钮） |
-| 9 | P3 | callLLMStream 已被使用，旧 callLLM 可删除（dead code 清理） |
-| 13 | P3 | Diagnose 评分逻辑（shim 用 issues 数量简单计算，可优化） |
+| 8 | P2 | 画布 Undo 按钮（可视化回滚，而非 API 端点） |

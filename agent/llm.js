@@ -80,69 +80,6 @@ export async function getBrainStatus() {
 }
 
 /**
- * Call LLM with messages and optional tools. Returns the full response.
- *
- * @param {Object} params
- * @param {Array} params.messages - Chat messages [{ role, content }]
- * @param {string} [params.systemPrompt] - System prompt
- * @param {Array} [params.tools] - OpenAI-format tool definitions
- * @param {number} [params.maxTokens] - Override max tokens
- * @returns {Promise<{ content: string, toolCalls: Array|null }>}
- */
-export async function callLLM({ messages, systemPrompt, tools, maxTokens }) {
-  const config = await loadBrainConfig();
-  if (!config) {
-    throw new Error(
-      `Brain not configured. Create ${CONFIG_PATH} with your OpenRouter API key, or set OPENROUTER_API_KEY env var.`
-    );
-  }
-
-  const body = {
-    model: config.model,
-    max_tokens: maxTokens || config.maxTokens,
-    temperature: 0,
-    messages: [
-      ...(systemPrompt ? [{ role: "system", content: systemPrompt }] : []),
-      ...messages,
-    ],
-  };
-
-  if (tools && tools.length > 0) {
-    body.tools = tools;
-  }
-
-  const res = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${config.apiKey}`,
-      "HTTP-Referer": "https://clawdoc.cc",
-      "X-Title": "ClawDoc Brain",
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`OpenRouter API error (${res.status}): ${err}`);
-  }
-
-  const data = await res.json();
-  const choice = data.choices?.[0];
-
-  if (!choice) {
-    throw new Error("No response from LLM");
-  }
-
-  return {
-    content: choice.message?.content || "",
-    toolCalls: choice.message?.tool_calls || null,
-    finishReason: choice.finish_reason,
-    usage: data.usage,
-  };
-}
-
-/**
  * Call LLM with streaming. Parses SSE chunks, accumulates the full response,
  * and calls onToken for each content delta.
  *

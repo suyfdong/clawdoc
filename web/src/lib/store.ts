@@ -136,6 +136,18 @@ interface AppState {
   diagnosis: DiagnosisResult | null;
   brainStatus: BrainStatus | null;
 
+  // Real-time monitoring
+  wsConnected: boolean;
+  recentEvents: Array<{ event: string; path: string; timestamp: number }>;
+  agentPulse: number;
+  serverStatus: {
+    openclawProcess: { running: boolean; pid: number | null; memoryMB: number | null };
+    activeSessions: number;
+    lastConfigChange: string | null;
+    agentUptime: string;
+    recentFileChanges: number;
+  } | null;
+
   // LLM Analysis
   analysis: AnalysisResult | null;
   analysisLoading: boolean;
@@ -153,6 +165,11 @@ interface AppState {
   connect: () => Promise<void>;
   disconnect: () => void;
   refreshInfo: () => Promise<void>;
+
+  // Actions — monitoring
+  connectWebSocket: () => void;
+  disconnectWebSocket: () => void;
+  fetchStatus: () => Promise<void>;
 
   // Actions — LLM brain
   configureBrain: (apiKey: string, model?: string) => Promise<{ ok: boolean; message: string }>;
@@ -274,6 +291,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   serverInfo: null,
   diagnosis: null,
   brainStatus: null,
+  wsConnected: false,
+  recentEvents: [],
+  agentPulse: 0,
+  serverStatus: null,
   analysis: null,
   analysisLoading: false,
   analysisError: null,
@@ -312,6 +333,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
       // Auto-fetch brain status after connecting
       get().fetchBrainStatus();
+      get().connectWebSocket();
+      get().fetchStatus();
     } catch (err) {
       set({
         connectionStatus: "error",
@@ -322,11 +345,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   disconnect: () => {
+    get().disconnectWebSocket();
     set({
       connectionStatus: "disconnected",
       serverInfo: null,
       diagnosis: null,
       brainStatus: null,
+      serverStatus: null,
       analysis: null,
       analysisLoading: false,
       analysisError: null,
@@ -532,6 +557,51 @@ export const useAppStore = create<AppState>((set, get) => ({
   clearChat: () => set({ chatMessages: [], proposedChanges: null }),
   clearProposedChanges: () => set({ proposedChanges: null }),
 
+  // --- Monitoring actions ---
+
+  connectWebSocket: () => {
+    const { serverUrl, authToken } = get();
+    if (!serverUrl || !authToken) return;
+
+    const wsUrl = serverUrl.replace(/^http/, "ws") + "/ws?token=" + authToken;
+    const ws = new WebSocket(wsUrl);
+
+    ws.onopen = () => set({ wsConnected: true });
+    ws.onclose = () => set({ wsConnected: false });
+    ws.onmessage = (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        set((state) => ({
+          agentPulse: Date.now(),
+          recentEvents: [
+            { event: data.event, path: data.path, timestamp: data.timestamp },
+            ...state.recentEvents.slice(0, 49),
+          ],
+        }));
+      } catch {}
+    };
+
+    (window as unknown as Record<string, unknown>).__clawdoc_ws = ws;
+  },
+
+  disconnectWebSocket: () => {
+    const ws = (window as unknown as Record<string, unknown>).__clawdoc_ws as WebSocket | null;
+    if (ws) {
+      ws.close();
+      (window as unknown as Record<string, unknown>).__clawdoc_ws = null;
+    }
+    set({ wsConnected: false, recentEvents: [], agentPulse: 0 });
+  },
+
+  fetchStatus: async () => {
+    const { serverUrl, authToken, connectionStatus } = get();
+    if (connectionStatus !== "connected") return;
+    try {
+      const status = await apiFetch(serverUrl, authToken, "/api/status");
+      set({ serverStatus: status });
+    } catch {}
+  },
+
   // --- Legacy actions (kept for compatibility with diagnose/templates/wizard pages) ---
 
   runDiagnosis: async () => {
@@ -542,9 +612,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     const currentAnalysis = get().analysis;
     if (currentAnalysis) {
-      // Convert analysis issues to DiagnosisResult format
       const issues = currentAnalysis.issues;
-      const score = Math.max(0, 100 - issues.length * 12);
+      const weights: Record<string, number> = { critical: 25, high: 15, medium: 8, low: 3 };
+      const deduction = issues.reduce((sum, i) => sum + (weights[i.severity] || 10), 0);
+      const score = Math.max(0, 100 - deduction);
       set({
         diagnosis: {
           score,

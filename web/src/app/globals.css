@@ -118,6 +118,21 @@ html {
   }
 }
 
+@keyframes beacon-active {
+  0%, 100% { box-shadow: 0 0 20px rgba(78, 205, 196, 0.4), 0 0 60px rgba(78, 205, 196, 0.1); }
+  50% { box-shadow: 0 0 30px rgba(78, 205, 196, 0.6), 0 0 80px rgba(78, 205, 196, 0.2); }
+}
+
+@keyframes beacon-idle {
+  0%, 100% { box-shadow: 0 0 15px rgba(245, 158, 66, 0.3); opacity: 0.8; }
+  50% { box-shadow: 0 0 25px rgba(245, 158, 66, 0.5); opacity: 1; }
+}
+
+@keyframes beacon-offline {
+  0%, 100% { box-shadow: 0 0 10px rgba(239, 100, 97, 0.3); }
+  50% { box-shadow: 0 0 20px rgba(239, 100, 97, 0.6); }
+}
+
 @keyframes shimmer {
   0% { background-position: -200% 0; }
   100% { background-position: 200% 0; }
