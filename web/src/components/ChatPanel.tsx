@@ -17,6 +17,7 @@ export default function ChatPanel() {
   const {
     chatMessages,
     chatLoading,
+    streamingContent,
     proposedChanges,
     sendChatMessage,
     applyProposedChanges,
@@ -37,7 +38,7 @@ export default function ChatPanel() {
   // Auto-scroll to bottom on new messages
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [chatMessages, proposedChanges]);
+  }, [chatMessages, proposedChanges, streamingContent]);
 
   const handleSend = () => {
     const msg = input.trim();
@@ -197,13 +198,28 @@ export default function ChatPanel() {
         ))}
 
         {chatLoading && (
-          <div
-            className="flex items-center gap-2 px-3 py-2 text-xs"
-            style={{ color: "var(--text-tertiary)" }}
-          >
-            <Loader2 size={12} className="animate-spin" />
-            Thinking...
-          </div>
+          streamingContent ? (
+            <div className="flex justify-start">
+              <div
+                className="max-w-[90%] rounded-lg px-3 py-2 text-xs leading-relaxed"
+                style={{
+                  background: "var(--bg-card)",
+                  color: "var(--text-secondary)",
+                  border: "1px solid var(--border-subtle)",
+                }}
+              >
+                <p className="whitespace-pre-wrap">{streamingContent}<span className="animate-pulse">|</span></p>
+              </div>
+            </div>
+          ) : (
+            <div
+              className="flex items-center gap-2 px-3 py-2 text-xs"
+              style={{ color: "var(--text-tertiary)" }}
+            >
+              <Loader2 size={12} className="animate-spin" />
+              Thinking...
+            </div>
+          )
         )}
 
         {/* Proposed changes */}

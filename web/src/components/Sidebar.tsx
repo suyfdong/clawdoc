@@ -40,7 +40,7 @@ const NAV_ITEMS = [
     href: "/diagnose",
     label: "Diagnosis",
     icon: Stethoscope,
-    requiresConnection: true,
+    requiresConnection: false,
   },
   {
     href: "/templates",
@@ -52,7 +52,7 @@ const NAV_ITEMS = [
     href: "/optimizer",
     label: "Cost Optimizer",
     icon: DollarSign,
-    requiresConnection: true,
+    requiresConnection: false,
   },
 ];
 

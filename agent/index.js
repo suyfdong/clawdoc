@@ -386,6 +386,19 @@ async function main() {
     }
   });
 
+  const rateLimiter = {
+    calls: [],
+    maxCalls: 20,
+    windowMs: 60000,
+    check() {
+      const now = Date.now();
+      this.calls = this.calls.filter(t => now - t < this.windowMs);
+      if (this.calls.length >= this.maxCalls) return false;
+      this.calls.push(now);
+      return true;
+    }
+  };
+
   // ---- LLM Brain endpoints ----
 
   const { tools: llmTools, handlers: toolHandlers } = createTools(openclawDir);
@@ -436,6 +449,10 @@ async function main() {
 
   // Analyze — LLM explores the OpenClaw installation
   app.post("/api/analyze", requireAuth, async (req, res) => {
+    if (!rateLimiter.check()) {
+      return res.status(429).json({ error: "Rate limit exceeded. Try again in a minute." });
+    }
+
     const brainConfig = await loadBrainConfig();
     if (!brainConfig) {
       return res.status(503).json({
@@ -505,6 +522,10 @@ async function main() {
     const { message, history = [] } = req.body;
     if (!message) return res.status(400).json({ error: "Missing message" });
 
+    if (!rateLimiter.check()) {
+      return res.status(429).json({ error: "Rate limit exceeded. Try again in a minute." });
+    }
+
     const brainConfig = await loadBrainConfig();
     if (!brainConfig) {
       return res.status(503).json({ error: "Brain not configured." });
@@ -536,11 +557,14 @@ async function main() {
         onProgress: (info) => {
           sendEvent("progress", { tool: info.tool });
         },
+        onToken: (token) => {
+          sendEvent("token", { content: token });
+        },
       });
 
       // Parse proposed changes if present
       let proposedChanges = null;
-      const changesMatch = result.content.match(/```json:changes\s*\n([\s\S]*?)\n```/);
+      const changesMatch = result.content.match(/```(?:json:changes|json)\s*\n([\s\S]*?)\n```/i);
       if (changesMatch) {
         try {
           const parsed = JSON.parse(changesMatch[1]);
@@ -551,7 +575,7 @@ async function main() {
       }
 
       // Clean content (remove the json:changes block)
-      const cleanContent = result.content.replace(/```json:changes[\s\S]*?```/, "").trim();
+      const cleanContent = result.content.replace(/```(?:json:changes|json)[\s\S]*?```/gi, "").trim();
 
       sendEvent("response", {
         content: cleanContent,
@@ -569,6 +593,10 @@ async function main() {
   app.post("/api/quick-op", requireAuth, async (req, res) => {
     const { action, agentId, slot, modelId, params } = req.body;
     if (!action) return res.status(400).json({ error: "Missing action" });
+
+    if (!rateLimiter.check()) {
+      return res.status(429).json({ error: "Rate limit exceeded. Try again in a minute." });
+    }
 
     const brainConfig = await loadBrainConfig();
     if (!brainConfig) {
@@ -613,10 +641,11 @@ Read the relevant config files and generate the exact changes needed.`;
       if (parsed) {
         res.json(parsed);
       } else {
-        res.status(500).json({ error: "Failed to process operation", raw: result.content });
+        res.status(422).json({ error: "Failed to process operation", raw: result.content });
       }
     } catch (err) {
-      res.status(500).json({ error: err.message });
+      const status = err.message?.includes("OpenRouter API error") ? 502 : 500;
+      res.status(status).json({ error: err.message });
     }
   });
 
@@ -702,8 +731,24 @@ Read the relevant config files and generate the exact changes needed.`;
       return;
     }
     connectedClients.add(ws);
+    ws.isAlive = true;
+    ws.on("pong", () => { ws.isAlive = true; });
     ws.on("close", () => connectedClients.delete(ws));
   });
+
+  const wsHeartbeat = setInterval(() => {
+    for (const client of connectedClients) {
+      if (!client.isAlive) {
+        connectedClients.delete(client);
+        client.terminate();
+        continue;
+      }
+      client.isAlive = false;
+      client.ping();
+    }
+  }, 30000);
+
+  wss.on("close", () => clearInterval(wsHeartbeat));
 
   // Watch OpenClaw directory for changes
   const watcher = watch(openclawDir, {

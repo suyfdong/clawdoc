@@ -542,6 +542,8 @@ function CanvasInner() {
     brainStatus,
   } = useAppStore();
 
+  const { screenToFlowPosition } = useReactFlow();
+
   const isConnected = connectionStatus === "connected";
   const effectiveAnalysis = analysis || (!isConnected ? DEMO_ANALYSIS : null);
 
@@ -701,6 +703,43 @@ function CanvasInner() {
     [nodes, setEdges]
   );
 
+  const onDrop = useCallback(
+    (event: React.DragEvent) => {
+      event.preventDefault();
+      const raw = event.dataTransfer.getData("application/clawdoc-model");
+      if (!raw) return;
+
+      const model = JSON.parse(raw);
+      const position = screenToFlowPosition({
+        x: event.clientX,
+        y: event.clientY,
+      });
+
+      const tier = guessTier(model.id);
+      const newNode: Node = {
+        id: `model-${model.id.replace(/\//g, "-")}-${Date.now()}`,
+        type: "modelNode",
+        position,
+        draggable: true,
+        data: {
+          modelId: model.id,
+          name: model.name || model.id,
+          tier,
+          source: model.source,
+          onDelete: (nodeId: string) => handleDeleteNodeRef.current(nodeId),
+        },
+      };
+
+      setNodes((nds) => [...nds, newNode]);
+    },
+    [screenToFlowPosition, setNodes]
+  );
+
+  const onDragOver = useCallback((event: React.DragEvent) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+  }, []);
+
   // ─── File viewer ──────────────────────────────────────────
 
   const DEMO_FILE_CONTENT: Record<string, string> = {
@@ -853,7 +892,12 @@ function CanvasInner() {
                   {effectiveAnalysis.availableModels.map((m) => (
                     <div
                       key={m.id}
-                      className="px-2.5 py-1.5 rounded-lg flex items-center gap-2"
+                      draggable
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData("application/clawdoc-model", JSON.stringify(m));
+                        e.dataTransfer.effectAllowed = "move";
+                      }}
+                      className="px-2.5 py-1.5 rounded-lg flex items-center gap-2 cursor-grab active:cursor-grabbing"
                       style={{ background: "var(--bg-card)", border: "1px solid var(--border-subtle)" }}
                     >
                       <div
@@ -965,6 +1009,8 @@ function CanvasInner() {
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
+            onDrop={onDrop}
+            onDragOver={onDragOver}
             nodeTypes={nodeTypes}
             fitView
             fitViewOptions={{ padding: 0.3 }}

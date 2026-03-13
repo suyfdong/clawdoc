@@ -143,12 +143,18 @@ export async function callLLM({ messages, systemPrompt, tools, maxTokens }) {
 }
 
 /**
- * Call LLM with streaming (SSE). Returns a ReadableStream of SSE events.
+ * Call LLM with streaming. Parses SSE chunks, accumulates the full response,
+ * and calls onToken for each content delta.
  *
- * @param {Object} params - Same as callLLM
- * @returns {Promise<ReadableStream>}
+ * @param {Object} params
+ * @param {Array} params.messages
+ * @param {string} [params.systemPrompt]
+ * @param {Array} [params.tools]
+ * @param {number} [params.maxTokens]
+ * @param {function} [params.onToken] - Called with each content delta string
+ * @returns {Promise<{ content: string, toolCalls: Array|null, finishReason: string }>}
  */
-export async function callLLMStream({ messages, systemPrompt, tools, maxTokens }) {
+export async function callLLMStream({ messages, systemPrompt, tools, maxTokens, onToken }) {
   const config = await loadBrainConfig();
   if (!config) {
     throw new Error(
@@ -187,7 +193,59 @@ export async function callLLMStream({ messages, systemPrompt, tools, maxTokens }
     throw new Error(`OpenRouter API error (${res.status}): ${err}`);
   }
 
-  return res.body;
+  let content = "";
+  const toolCallsMap = new Map();
+  let finishReason = "stop";
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+
+    for (const line of lines) {
+      if (!line.startsWith("data: ") || line === "data: [DONE]") continue;
+      let chunk;
+      try { chunk = JSON.parse(line.slice(6)); } catch { continue; }
+
+      const delta = chunk.choices?.[0]?.delta;
+      if (!delta) continue;
+
+      if (chunk.choices[0].finish_reason) {
+        finishReason = chunk.choices[0].finish_reason;
+      }
+
+      if (delta.content) {
+        content += delta.content;
+        if (onToken) onToken(delta.content);
+      }
+
+      if (delta.tool_calls) {
+        for (const tc of delta.tool_calls) {
+          const idx = tc.index;
+          if (!toolCallsMap.has(idx)) {
+            toolCallsMap.set(idx, { id: tc.id || "", type: "function", function: { name: "", arguments: "" } });
+          }
+          const existing = toolCallsMap.get(idx);
+          if (tc.id) existing.id = tc.id;
+          if (tc.function?.name) existing.function.name += tc.function.name;
+          if (tc.function?.arguments) existing.function.arguments += tc.function.arguments;
+        }
+      }
+    }
+  }
+
+  const toolCalls = toolCallsMap.size > 0
+    ? Array.from(toolCallsMap.values())
+    : null;
+
+  return { content, toolCalls, finishReason };
 }
 
 /**
@@ -209,6 +267,7 @@ export async function runAgentLoop({
   toolHandlers,
   maxIterations = 10,
   onProgress,
+  onToken,
 }) {
   const allMessages = [...messages];
   let iterations = 0;
@@ -216,10 +275,11 @@ export async function runAgentLoop({
   while (iterations < maxIterations) {
     iterations++;
 
-    const result = await callLLM({
+    const result = await callLLMStream({
       systemPrompt,
       messages: allMessages,
       tools,
+      onToken,
     });
 
     // If no tool calls, we're done — append the final assistant response

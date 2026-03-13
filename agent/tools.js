@@ -117,7 +117,8 @@ export function createTools(openclawDir) {
           } else if (
             entry.name.endsWith(".json") ||
             entry.name.endsWith(".json5") ||
-            entry.name.endsWith(".jsonc")
+            entry.name.endsWith(".jsonc") ||
+            entry.name.endsWith(".md")
           ) {
             try {
               const content = await readFile(fullPath, "utf-8");
@@ -206,7 +207,7 @@ export function createTools(openclawDir) {
       function: {
         name: "search_config",
         description:
-          "Search all JSON/JSON5 config files in the OpenClaw directory for a keyword or config key. Useful for finding where a model, setting, or feature is defined.",
+          "Search all JSON/JSON5 config files and markdown files (.md) in the OpenClaw directory for a keyword or config key. Useful for finding where a model, setting, or feature is defined.",
         parameters: {
           type: "object",
           properties: {

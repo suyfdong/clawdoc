@@ -144,6 +144,7 @@ interface AppState {
   // Chat
   chatMessages: ChatMessage[];
   chatLoading: boolean;
+  streamingContent: string;
   proposedChanges: ProposedChange[] | null;
 
   // Actions — connection
@@ -278,6 +279,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   analysisError: null,
   chatMessages: [],
   chatLoading: false,
+  streamingContent: "",
   proposedChanges: null,
 
   // --- Connection actions ---
@@ -330,6 +332,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       analysisError: null,
       chatMessages: [],
       chatLoading: false,
+      streamingContent: "",
       proposedChanges: null,
       connectionError: null,
     });
@@ -418,6 +421,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({
       chatMessages: [...chatMessages, userMsg],
       chatLoading: true,
+      streamingContent: "",
       proposedChanges: null,
     });
 
@@ -437,7 +441,11 @@ export const useAppStore = create<AppState>((set, get) => ({
           })),
         },
         (event) => {
-          if (event.type === "response") {
+          if (event.type === "token") {
+            set((state) => ({
+              streamingContent: state.streamingContent + (event.content as string),
+            }));
+          } else if (event.type === "response") {
             assistantContent = event.content as string;
             proposedChanges = (event.proposedChanges as ProposedChange[]) || null;
           }
@@ -454,6 +462,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       set((state) => ({
         chatMessages: [...state.chatMessages, assistantMsg],
         proposedChanges,
+        streamingContent: "",
       }));
     } catch (err) {
       const errorMsg: ChatMessage = {
@@ -463,6 +472,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       };
       set((state) => ({
         chatMessages: [...state.chatMessages, errorMsg],
+        streamingContent: "",
       }));
     } finally {
       set({ chatLoading: false });

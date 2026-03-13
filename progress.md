@@ -140,7 +140,61 @@
 - Heartbeat 槽位有视觉警告标记
 
 ### 下一步
-1. 腾讯云部署 Companion Agent + 真实 OpenClaw 测试
-2. 迁移 diagnose/wizard/templates 页面到 LLM API
-3. 画布交互优化（拖拽模型到槽位等）
-4. 用户反馈 Heartbeat 显示是否满意（待确认）
+> **开始前先读 `clawdoc/issues.md`** — 2026-03-12 全面排查的 14 个问题清单（P0~P3），按优先级逐一修复。
+
+1. 修复 P0：Wizard/Diagnose/Templates 调用已删除旧端点 → 迁移到 LLM API
+2. 修复 P1：SSE 真流式、Canvas 真实模式验证、拖拽交互补全
+3. 修复 P2：速率限制、WebSocket 心跳、回滚 API
+4. 修复 P3：dead code 清理、JSON 解析容错、错误码细化等
+5. 腾讯云部署 Companion Agent + 真实 OpenClaw 测试
+
+## 2026-03-13
+
+### 完成的工作 — Issues 批量修复（10/14）
+
+**Agent 端（`agent/`）**
+
+1. **`agent/llm.js`** — SSE 真流式重写
+   - `callLLMStream()` 完全重写：解析 OpenAI SSE 流式格式，累积 content + tool_calls，每个 token 调用 `onToken` 回调
+   - `runAgentLoop()` 从 `callLLM()` 切换到 `callLLMStream()`，新增 `onToken` 参数全程流式
+
+2. **`agent/index.js`** — 5 项改进
+   - `/api/chat` 传递 `onToken` 回调，发送 SSE "token" 事件（P1 #3）
+   - JSON 块解析容错：支持 ` ```json ` 和 ` ```json:changes `，大小写不敏感（P3 #10）
+   - `/api/quick-op` 错误码细分：400/422/502/500（P3 #11）
+   - 速率限制：20 calls/min in-memory limiter，覆盖 analyze/chat/quick-op（P2 #6）
+   - WebSocket 30s ping/pong 心跳 + 死连接自动清理（P2 #7）
+
+3. **`agent/tools.js`** — search_config 扩展搜索 `.md` 文件（P3 #12）
+
+**Web 端（`web/`）**
+
+4. **`web/src/lib/store.ts`** — 流式状态
+   - 新增 `streamingContent` 状态字段
+   - `sendChatMessage` 处理 "token" SSE 事件，增量构建流式内容
+   - 完成时清空 streamingContent 并写入最终消息
+
+5. **`web/src/components/ChatPanel.tsx`** — 流式显示
+   - 有 streamingContent 时显示实时文本 + 闪烁光标，无内容时显示 "Thinking..."
+   - auto-scroll 响应 streamingContent 变化
+
+6. **`web/src/app/canvas/page.tsx`** — 拖拽补全（P1 #5）
+   - 侧边栏模型 `draggable` + `onDragStart` 序列化模型数据
+   - ReactFlow 区域 `onDrop` 创建新 modelNode + `onDragOver` 允许放置
+   - 用 `screenToFlowPosition()` 转换坐标
+
+7. **`web/src/components/Sidebar.tsx`** — 统一禁用状态（P3 #14）
+   - 所有页面 `requiresConnection: false`，均可浏览
+   - 各页面自行在操作时检查连接
+
+**Build：14/14 页面通过**
+
+### 当前状态
+- 14 个 issues 中 10 个已修复
+- 剩余 4 个：#4（真实模式验证，需服务器）、#8（回滚 API）、#9（dead code 清理）、#13（评分优化）
+
+### 下一步
+1. 推送到 GitHub + Vercel 部署
+2. 腾讯云部署 Agent，验证 P1 #4（Canvas 真实模式）
+3. 清理 dead code（旧 `callLLM` 函数可删除）
+4. 长期：回滚 API + Diagnose 评分优化
